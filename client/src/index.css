@@ -638,7 +638,7 @@ body {
 }
 
 .comic-coin {
-  transform-origin: 44px 70px;
+  transform-origin: 44px 69px;
   animation: comic-coin-pulse 2.4s ease-in-out infinite;
 }
 

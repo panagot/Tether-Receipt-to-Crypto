@@ -21,10 +21,15 @@ export function ComicHeroIllustration() {
             <stop offset="50%" stopColor="#22c55e" stopOpacity="0.35" />
             <stop offset="100%" stopColor="#0d4a6e" stopOpacity="0.08" />
           </linearGradient>
-          <radialGradient id={`${sid}-coin`} cx="38%" cy="28%" r="72%">
-            <stop offset="0%" stopColor="#6ee7a8" />
-            <stop offset="55%" stopColor="#34d399" />
+          <radialGradient id={`${sid}-coinOuter`} cx="32%" cy="22%" r="92%">
+            <stop offset="0%" stopColor="#86efac" />
+            <stop offset="40%" stopColor="#4ade80" />
             <stop offset="100%" stopColor="#16a34a" />
+          </radialGradient>
+          <radialGradient id={`${sid}-coinInner`} cx="35%" cy="28%" r="78%">
+            <stop offset="0%" stopColor="#34d399" />
+            <stop offset="55%" stopColor="#26a17b" />
+            <stop offset="100%" stopColor="#0f766e" />
           </radialGradient>
           <filter id={`${sid}-ink`} x="-8%" y="-8%" width="116%" height="116%">
             <feDropShadow dx="0" dy="3" stdDeviation="0" floodColor="#0f1419" floodOpacity="0.12" />
@@ -169,22 +174,47 @@ export function ComicHeroIllustration() {
               fill="#ffffff"
               opacity="0.35"
             />
-            {/* USDT — label on white capsule so it never sits on dark green */}
+            {/* USDT — two-layer Tether-style disc + vector mark (no font fallback for ₮) */}
             <g className="comic-coin">
-              <circle cx="44" cy="70" r="28" fill={`url(#${sid}-coin)`} stroke="#0f1419" strokeWidth="2.5" />
-              <circle cx="44" cy="70" r="22" fill="none" stroke="#ffffff" strokeWidth="1" opacity="0.4" />
-              <text
-                x="44"
-                y="78"
-                textAnchor="middle"
-                fontSize="22"
-                fontWeight="900"
+              <circle
+                cx="44"
+                cy="69"
+                r="29"
+                fill={`url(#${sid}-coinOuter)`}
+                stroke="#0f1419"
+                strokeWidth="2.5"
+              />
+              <circle cx="44" cy="69" r="21.5" fill={`url(#${sid}-coinInner)`} />
+              <circle
+                cx="44"
+                cy="69"
+                r="21.5"
+                fill="none"
+                stroke="#ffffff"
+                strokeWidth="0.9"
+                opacity="0.28"
+              />
+              <ellipse
+                cx="37.5"
+                cy="61"
+                rx="11"
+                ry="7.5"
                 fill="#ffffff"
-                fontFamily="system-ui, sans-serif"
-                style={{ paintOrder: "stroke fill", stroke: "#0f1419", strokeWidth: "1.2px" }}
+                opacity="0.22"
+                transform="rotate(-28 37.5 61)"
+              />
+              {/* White T + mid bar (Tether-style), centered on disc */}
+              <g
+                transform="translate(44, 66.5)"
+                fill="#ffffff"
+                stroke="none"
+                strokeLinejoin="round"
+                strokeLinecap="round"
               >
-                ₮
-              </text>
+                <rect x="-10" y="-11.5" width="20" height="4" rx="1.2" />
+                <rect x="-2.1" y="-11.5" width="4.2" height="21" rx="1.4" />
+                <rect x="-8.5" y="-1.2" width="17" height="4" rx="2" />
+              </g>
               <rect
                 x="20"
                 y="86"
