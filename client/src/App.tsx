@@ -449,6 +449,16 @@ export function App() {
               Clear receipt
             </button>
           </div>
+          {healthLoad === "ok" && health?.mockAi && (
+            <div className="mock-ai-note" role="note">
+              <strong>Mock AI is on.</strong> The API returns fixed sample OCR and totals (for example{" "}
+              <strong>47.89 USD</strong>) — it does <strong>not</strong> read your receipt image. To extract
+              real totals from your scan, set{" "}
+              <code className="mock-ai-note__code">USE_MOCK_AI=false</code> in <code className="mock-ai-note__code">.env</code>, restart{" "}
+              <code className="mock-ai-note__code">npm run dev</code>, and run extraction again (QVAC needs
+              models + a capable GPU on Windows).
+            </div>
+          )}
           {error && <div className="err">{error}</div>}
         </section>
 

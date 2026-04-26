@@ -916,6 +916,30 @@ button.secondary--ghost:hover:not(:disabled) {
 }
 
 /* —— Alerts —— */
+.mock-ai-note {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  background: #fffbeb;
+  border: 1px solid rgba(180, 83, 9, 0.28);
+  color: #78350f;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.mock-ai-note strong {
+  color: #451a03;
+}
+
+.mock-ai-note__code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78em;
+  padding: 0.08rem 0.28rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(180, 83, 9, 0.25);
+}
+
 .err {
   margin-top: 0.85rem;
   padding: 0.65rem 0.85rem;

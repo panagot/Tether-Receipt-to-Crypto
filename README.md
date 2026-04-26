@@ -4,7 +4,7 @@
 
 ## For judges (demo checklist)
 
-1. **Environment** — Confirm pills in the header: cluster (e.g. Devnet), Mock vs local AI, wallet ready/off.
+1. **Environment** — Confirm pills in the header: cluster (e.g. Devnet), Mock vs local AI, wallet ready/off. If **Mock AI** is on, extraction uses **fixed sample data**, not the receipt image — use `USE_MOCK_AI=false` for a real demo (see `.env.example`).
 2. **Upload** — Drop or select a JPEG/PNG/WebP receipt → **Run extraction** (or **Ctrl+Enter** / **⌘+Enter** with a file selected).
 3. **Review** — Scrolls to OCR + preview; totals are inferred, not financial advice.
 4. **Fields** — Edit any value; USDT base units update from the fiat total when you change it.

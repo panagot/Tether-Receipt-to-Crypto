@@ -110,14 +110,16 @@ export async function extractReceiptWithQvac(
   image: Buffer
 ): Promise<{ ocrText: string; extraction: ReceiptExtraction }> {
   if (useMockAi()) {
-    const ocrText = "MOCK STORE\n123 Main St\nTOTAL 47.89 USD\nTHANK YOU";
+    const ocrText =
+      "[MOCK — your receipt image was NOT scanned; set USE_MOCK_AI=false for real QVAC]\n" +
+      "MOCK STORE\n123 Main St\nTOTAL 47.89 USD\nTHANK YOU";
     const extraction = ReceiptExtractionSchema.parse({
       merchant: "Mock Store",
       total: 47.89,
       currency: "USD",
       category: "retail",
       confidence: 0.5,
-      notes: "USE_MOCK_AI=true — set to false for real QVAC.",
+      notes: "Placeholder only while USE_MOCK_AI=true. Restart API after USE_MOCK_AI=false.",
     });
     return { ocrText, extraction };
   }
