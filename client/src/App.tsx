@@ -69,13 +69,22 @@ export function App() {
   const [payResult, setPayResult] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [health, setHealth] = useState<ApiHealth | null>(null);
+  const [healthLoad, setHealthLoad] = useState<"loading" | "ok" | "error">("loading");
   const [navHint, setNavHint] = useState<string | null>(null);
+  const [sigCopied, setSigCopied] = useState(false);
 
   useEffect(() => {
+    setHealthLoad("loading");
     fetch("/api/health")
       .then((r) => r.json())
-      .then((j: ApiHealth) => setHealth(j))
-      .catch(() => setHealth(null));
+      .then((j: ApiHealth) => {
+        setHealth(j);
+        setHealthLoad("ok");
+      })
+      .catch(() => {
+        setHealth(null);
+        setHealthLoad("error");
+      });
   }, []);
 
   useEffect(() => {
@@ -115,7 +124,7 @@ export function App() {
     document.getElementById("workflow")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
-  const extract = async () => {
+  const extract = useCallback(async () => {
     if (!file) return;
     setLoading(true);
     setError(null);
@@ -139,17 +148,34 @@ export function App() {
       setMemo(
         `${ext?.merchant ?? "payee"}|${ext?.category ?? "expense"}`.slice(0, 120)
       );
+      window.setTimeout(() => {
+        document.getElementById("review")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
     } catch (e) {
       setError(e instanceof Error ? e.message : "extract failed");
     } finally {
       setLoading(false);
     }
-  };
+  }, [file]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey)) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("textarea, input, select, [contenteditable=true]")) return;
+      if (!file || loading) return;
+      e.preventDefault();
+      void extract();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [file, loading, extract]);
 
   const pay = async () => {
     setPayLoading(true);
     setError(null);
     setPayResult(null);
+    setSigCopied(false);
     try {
       const r = await fetch("/api/pay", {
         method: "POST",
@@ -169,6 +195,16 @@ export function App() {
       setPayLoading(false);
     }
   };
+
+  const copySignature = useCallback(async (sig: string) => {
+    try {
+      await navigator.clipboard.writeText(sig);
+      setSigCopied(true);
+      window.setTimeout(() => setSigCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }, []);
 
   const canPay = useMemo(() => {
     return (
@@ -204,12 +240,16 @@ export function App() {
             </div>
             <div>
               <div className="brand__text">Receipt to Crypto</div>
-              <div className="brand__tagline">Local inference · optional on-chain settlement</div>
+              <div className="brand__tagline">Local QVAC · optional USDT with WDK on Solana</div>
             </div>
           </div>
           <div className="top-bar__meta" role="status" aria-live="polite">
             <span className="pill">QVAC + WDK</span>
-            {health && (
+            {healthLoad === "loading" && (
+              <span className="pill pill--muted pill--shimmer">Connecting…</span>
+            )}
+            {healthLoad === "error" && <span className="pill pill--warn">API offline</span>}
+            {healthLoad === "ok" && health && (
               <>
                 <span className="pill pill--cluster">{clusterLabel}</span>
                 {health.mockAi ? (
@@ -229,6 +269,9 @@ export function App() {
       <div className="layout-body">
         <aside className="sidebar" aria-label="Workflow and stack">
           <h2 className="sidebar__title">Workflow</h2>
+          <p className="sidebar__blurb">
+            Receipt image → local extract → optional USDT after you verify fields.
+          </p>
           <nav className="sidebar__nav" aria-label="Page sections">
             <a
               href="#workflow"
@@ -331,11 +374,12 @@ export function App() {
           <div className="hero-intro">
             <div className="section-head">
               <div>
-                <h1 id="workflow-title">Turn a receipt into structured pay</h1>
+                <h1 id="workflow-title">Scan receipts, extract locally, pay USDT when you are ready</h1>
                 <p className="sub">
-                  <strong>QVAC</strong> runs OCR and a small LLM on your machine to read totals and
-                  merchant names. Optionally send <strong>USDT</strong> with <strong>WDK</strong>{" "}
-                  after you verify every field.
+                  <strong>QVAC</strong> runs OCR and a small LLM on <strong>your machine</strong> (via this
+                  app’s API) — receipt bytes are not sent to a cloud LLM for extraction. Edit every field,
+                  then optionally send <strong>USDT</strong> on Solana with <strong>Tether WDK</strong> after
+                  you confirm recipient and amount.
                 </p>
               </div>
             </div>
@@ -383,7 +427,11 @@ export function App() {
             ) : (
               <>
                 <div className="drop__title">Drop receipt here or browse</div>
-                <div className="drop__hint">Camera photos and scans work best with good lighting</div>
+                <div className="drop__hint">
+                  Camera photos and scans work best with good lighting ·{" "}
+                  <kbd className="kbd-hint">Ctrl</kbd> or <kbd className="kbd-hint">⌘</kbd> +{" "}
+                  <kbd className="kbd-hint">Enter</kbd> runs extraction when a file is selected
+                </div>
               </>
             )}
           </div>
@@ -428,7 +476,7 @@ export function App() {
               Extracted fields
             </h2>
             <p style={{ margin: "-0.5rem 0 1rem", fontSize: "0.875rem", color: "var(--ink-muted)" }}>
-              Edit anything before paying — amounts are not advice.
+              Edit anything before settlement — nothing sends until you sign below.
             </p>
             <div className="grid">
               <div className="field">
@@ -497,8 +545,8 @@ export function App() {
                 onChange={(e) => setConfirmed(e.target.checked)}
               />
               <span>
-                I have verified the <strong>recipient</strong> and <strong>amount</strong>. I understand
-                this tool is not financial or tax advice.
+                I have checked the <strong>recipient</strong> and <strong>amount</strong> and I am ready to
+                sign this transaction.
               </span>
             </label>
             <div className="actions">
@@ -512,16 +560,21 @@ export function App() {
                   <span className="ok__label">Signature</span>
                   <code className="ok__sig">{payResult}</code>
                 </div>
-                {payExplorerUrl && (
-                  <a
-                    className="ok__link"
-                    href={payExplorerUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    View on Solana Explorer
-                  </a>
-                )}
+                <div className="ok__actions">
+                  <button type="button" className="ok__copy" onClick={() => void copySignature(payResult)}>
+                    {sigCopied ? "Copied" : "Copy signature"}
+                  </button>
+                  {payExplorerUrl && (
+                    <a
+                      className="ok__link"
+                      href={payExplorerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Solana Explorer
+                    </a>
+                  )}
+                </div>
               </div>
             )}
           </section>
@@ -537,8 +590,8 @@ export function App() {
             <div className="site-footer__intro">
               <div className="site-footer__brand">Receipt to Crypto</div>
               <p className="site-footer__tag">
-                Receipt capture, local extraction, and optional on-chain settlement — built for demos and
-                controlled environments.
+                Local receipt extraction with QVAC and optional USDT settlement with Tether WDK — open
+                source, run the full flow with <code className="footer-code">npm run dev</code>.
               </p>
             </div>
             <nav className="site-footer__links" aria-label="External resources">

@@ -214,6 +214,27 @@ body {
   border-color: var(--line);
 }
 
+.pill--shimmer {
+  animation: pill-shimmer 1.1s ease-in-out infinite;
+}
+
+@keyframes pill-shimmer {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill--shimmer {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
 /* —— Sidebar + main column —— */
 .layout-body {
   flex: 1;
@@ -389,6 +410,13 @@ body {
   letter-spacing: -0.02em;
   margin: 0 0 0.75rem;
   color: var(--ink);
+}
+
+.sidebar__blurb {
+  margin: -0.35rem 0 0.85rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--ink-muted);
 }
 
 .sidebar__nav {
@@ -948,6 +976,52 @@ button.secondary--ghost:hover:not(:disabled) {
 
 .ok__link:hover {
   text-decoration: underline;
+}
+
+.ok__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+}
+
+.ok__copy {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(13, 92, 46, 0.35);
+  background: var(--surface);
+  color: var(--success);
+  cursor: pointer;
+}
+
+.ok__copy:hover {
+  background: #fff;
+}
+
+.kbd-hint {
+  display: inline-block;
+  padding: 0.08rem 0.35rem;
+  margin: 0 0.05rem;
+  font-size: 0.72rem;
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  vertical-align: baseline;
+}
+
+.footer-code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78em;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
 }
 
 /* —— Preview —— */

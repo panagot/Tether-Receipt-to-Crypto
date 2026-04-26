@@ -1,6 +1,16 @@
 # Receipt to Crypto
 
-Local **QVAC** (OCR + LLM) extracts merchant, total, and category from a receipt image. Optional **WDK** sends **USDT** on Solana after you confirm amounts.
+**QVAC** (local OCR + small LLM) turns a receipt image into editable fields (merchant, total, category). **Tether WDK** optionally sends **USDT** on Solana after you confirm the recipient and amount.
+
+## For judges (demo checklist)
+
+1. **Environment** — Confirm pills in the header: cluster (e.g. Devnet), Mock vs local AI, wallet ready/off.
+2. **Upload** — Drop or select a JPEG/PNG/WebP receipt → **Run extraction** (or **Ctrl+Enter** / **⌘+Enter** with a file selected).
+3. **Review** — Scrolls to OCR + preview; totals are inferred, not financial advice.
+4. **Fields** — Edit any value; USDT base units update from the fiat total when you change it.
+5. **Settlement** — Paste devnet recipient, set amount, check confirmation, **Send USDT** → copy signature or open **Solana Explorer**.
+
+**Architecture (honest scope):** Vite UI + Express API on your machine. Receipt bytes hit the **local** API; QVAC runs there (or mock mode without models). Nothing is sent to a cloud LLM for extraction. Static hosts (e.g. Vercel-only static) do not serve `/api`; run `npm run dev` or `npm start` for the full loop.
 
 ## Requirements
 
@@ -29,3 +39,7 @@ npm run dev
 ## Vercel
 
 Import this repo in [Vercel](https://vercel.com): build runs `npm run build` and static output is `client/dist` (see `vercel.json`). The UI calls `/api/*`; on a static deployment those routes are not served unless you add a separate backend or serverless routes, so point the production UI at your API host or use Vercel only for the frontend demo.
+
+## Links
+
+- **Source:** [github.com/panagot/Tether-Receipt-to-Crypto](https://github.com/panagot/Tether-Receipt-to-Crypto)
