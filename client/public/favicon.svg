@@ -1,14 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-hidden="true">
-  <rect width="32" height="32" rx="8" fill="#0d4a6e" />
+  <defs>
+    <linearGradient id="t" x1="22%" y1="12%" x2="78%" y2="92%">
+      <stop offset="0%" stop-color="#5ee9a8" />
+      <stop offset="45%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#26a17b" />
+    </linearGradient>
+  </defs>
+  <circle cx="16" cy="16" r="15" fill="url(#t)" />
   <text
     x="16"
-    y="22"
+    y="21.5"
     text-anchor="middle"
-    font-family="Georgia, 'Times New Roman', serif"
-    font-size="17"
-    font-weight="600"
+    font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
+    font-size="15"
+    font-weight="900"
     fill="#ffffff"
   >
-    R
+    ₮
   </text>
 </svg>

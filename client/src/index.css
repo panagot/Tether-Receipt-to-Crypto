@@ -146,6 +146,17 @@ body {
   letter-spacing: -0.02em;
 }
 
+/* Tether-style mark (USDT ₮) — matches favicon treatment */
+.brand__mark--tether {
+  border-radius: 50%;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  background: linear-gradient(145deg, #5ee9a8 0%, #34d399 40%, #26a17b 100%);
+  box-shadow: 0 2px 12px rgba(38, 161, 123, 0.45);
+}
+
 .brand__text {
   font-family: var(--font-display);
   font-size: 1.15rem;
@@ -511,6 +522,54 @@ body {
 }
 
 .site-footer__links a:hover {
+  text-decoration: underline;
+}
+
+/* —— About card —— */
+.card--about {
+  background: linear-gradient(180deg, #f8fdfb 0%, var(--surface) 55%);
+  border-color: rgba(52, 211, 153, 0.25);
+}
+
+.about__lead {
+  margin: 0 0 0.85rem;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+.about__list {
+  margin: 0 0 1rem;
+  padding-left: 1.15rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+.about__list li {
+  margin-bottom: 0.35rem;
+}
+
+.about__list strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.about__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+  align-items: center;
+}
+
+.about__links a {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.about__links a:hover {
   text-decoration: underline;
 }
 

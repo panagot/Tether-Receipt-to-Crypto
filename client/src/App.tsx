@@ -192,8 +192,8 @@ export function App() {
       <header className="top-bar">
         <div className="top-bar__inner">
           <div className="brand">
-            <div className="brand__mark" aria-hidden="true">
-              R
+            <div className="brand__mark brand__mark--tether" aria-hidden="true">
+              ₮
             </div>
             <div>
               <div className="brand__text">Receipt to Crypto</div>
@@ -267,6 +267,15 @@ export function App() {
               }}
             >
               Send USDT
+            </a>
+            <a
+              href="#about"
+              onClick={(e) => {
+                e.preventDefault();
+                goToSection("about");
+              }}
+            >
+              About &amp; source
             </a>
           </nav>
           <hr className="sidebar__rule" />
@@ -520,6 +529,46 @@ export function App() {
           </section>
         )}
 
+            <section id="about" className="card card--about" aria-labelledby="about-title">
+              <h2 id="about-title" className="panel-title">
+                About this demo
+              </h2>
+              <p className="about__lead">
+                Receipt to Crypto is a <strong>controlled-environment demo</strong>: local extraction with
+                optional on-chain settlement. It is not a hosted custodial product, not investment advice, and
+                not a substitute for your own accounting or compliance review.
+              </p>
+              <ul className="about__list">
+                <li>
+                  <strong>Privacy-first path:</strong> QVAC can run entirely on your machine so receipt pixels
+                  and inferred fields stay local until you choose to pay.
+                </li>
+                <li>
+                  <strong>USDT via WDK:</strong> Sending tokens requires a configured devnet wallet, mint, and
+                  RPC — check the status pills before judging a pay flow.
+                </li>
+                <li>
+                  <strong>Open source:</strong> Inspect, fork, and run the same UI and API from the repository
+                  linked below.
+                </li>
+              </ul>
+              <div className="about__links">
+                <a
+                  href="https://github.com/panagot/Tether-Receipt-to-Crypto"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  GitHub repository
+                </a>
+                <a href="https://tether.to" target="_blank" rel="noopener noreferrer">
+                  Tether
+                </a>
+                <a href="https://solana.com" target="_blank" rel="noopener noreferrer">
+                  Solana
+                </a>
+              </div>
+            </section>
+
           </div>
         </main>
       </div>
@@ -535,6 +584,13 @@ export function App() {
               </p>
             </div>
             <nav className="site-footer__links" aria-label="External resources">
+              <a
+                href="https://github.com/panagot/Tether-Receipt-to-Crypto"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                GitHub
+              </a>
               <a href="https://tether.to" target="_blank" rel="noopener noreferrer">
                 Tether
               </a>
