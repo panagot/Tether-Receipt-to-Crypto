@@ -31,6 +31,25 @@ export function ComicHeroIllustration() {
             <stop offset="55%" stopColor="#26a17b" />
             <stop offset="100%" stopColor="#0f766e" />
           </radialGradient>
+          <linearGradient id={`${sid}-phoneFrame`} x1="50%" y1="0%" x2="50%" y2="100%">
+            <stop offset="0%" stopColor="#475569" />
+            <stop offset="45%" stopColor="#1e293b" />
+            <stop offset="100%" stopColor="#0f172a" />
+          </linearGradient>
+          <linearGradient id={`${sid}-phoneScreen`} x1="50%" y1="0%" x2="50%" y2="100%">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="55%" stopColor="#f0f9ff" />
+            <stop offset="100%" stopColor="#e0f2fe" />
+          </linearGradient>
+          <linearGradient id={`${sid}-sideBtn`} x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#64748b" />
+            <stop offset="100%" stopColor="#334155" />
+          </linearGradient>
+          <linearGradient id={`${sid}-sendBtn`} x1="50%" y1="0%" x2="50%" y2="100%">
+            <stop offset="0%" stopColor="#fed7aa" />
+            <stop offset="25%" stopColor="#fb923c" />
+            <stop offset="100%" stopColor="#c2410c" />
+          </linearGradient>
           <filter id={`${sid}-ink`} x="-8%" y="-8%" width="116%" height="116%">
             <feDropShadow dx="0" dy="3" stdDeviation="0" floodColor="#0f1419" floodOpacity="0.12" />
           </filter>
@@ -160,20 +179,66 @@ export function ComicHeroIllustration() {
               y="0"
               width="88"
               height="158"
-              rx="14"
-              fill="#1e293b"
+              rx="15"
+              fill={`url(#${sid}-phoneFrame)`}
+              stroke="#0f1419"
+              strokeWidth="3"
+            />
+            <rect
+              x="2.5"
+              y="2.5"
+              width="83"
+              height="153"
+              rx="13"
+              fill="none"
+              stroke="#64748b"
+              strokeWidth="0.75"
+              opacity="0.45"
+            />
+            <rect
+              x="5"
+              y="11"
+              width="5.5"
+              height="26"
+              rx="2.75"
+              fill={`url(#${sid}-sideBtn)`}
+              stroke="#0f1419"
+              strokeWidth="1.5"
+            />
+            <rect
+              x="8"
+              y="23"
+              width="72"
+              height="127"
+              rx="8"
+              fill={`url(#${sid}-phoneScreen)`}
               stroke="#0f1419"
               strokeWidth="2.5"
             />
-            <rect x="5" y="10" width="6" height="22" rx="2" fill="#334155" stroke="#0f1419" strokeWidth="1.5" />
-            <rect x="8" y="22" width="72" height="128" rx="7" fill="#f0f9ff" stroke="#0f1419" strokeWidth="2" />
-            <rect x="32" y="14" width="24" height="5" rx="2.5" fill="#0f1419" />
-            {/* glass glint */}
-            <path
-              d="M 16 28 L 28 28 L 22 120 L 16 120 Z"
-              fill="#ffffff"
+            {/* inner bezel hint */}
+            <rect
+              x="10"
+              y="25"
+              width="68"
+              height="123"
+              rx="6"
+              fill="none"
+              stroke="#94a3b8"
+              strokeWidth="0.5"
               opacity="0.35"
             />
+            {/* dynamic island */}
+            <rect x="31" y="27" width="26" height="6.5" rx="3.25" fill="#0f172a" stroke="#0f1419" strokeWidth="1.5" />
+            <ellipse cx="39" cy="30.5" rx="2" ry="1.5" fill="#1e293b" opacity="0.6" />
+            <ellipse cx="49" cy="30.5" rx="2" ry="1.5" fill="#1e293b" opacity="0.6" />
+            {/* glass glint */}
+            <path
+              d="M 14 32 L 30 32 L 22 118 L 12 118 Z"
+              fill="#ffffff"
+              opacity="0.28"
+            />
+            {/* home indicator (above bottom bezel, clear of SEND) */}
+            <rect x="34" y="146" width="20" height="2.5" rx="1.25" fill="#94a3b8" opacity="0.55" />
             {/* USDT — two-layer Tether-style disc + vector mark (no font fallback for ₮) */}
             <g className="comic-coin">
               <circle
@@ -239,16 +304,45 @@ export function ComicHeroIllustration() {
               </text>
             </g>
             <g>
-              <rect x="20" y="124" width="48" height="20" rx="8" fill="#ea580c" stroke="#0f1419" strokeWidth="2" />
+              {/* SEND — comic depth: cast, gradient, highlight */}
+              <rect
+                x="22"
+                y="125"
+                width="44"
+                height="22"
+                rx="11"
+                fill="#0f1419"
+                opacity="0.14"
+              />
+              <rect
+                x="20"
+                y="122"
+                width="48"
+                height="23"
+                rx="11.5"
+                fill={`url(#${sid}-sendBtn)`}
+                stroke="#0f1419"
+                strokeWidth="2.5"
+              />
+              <path
+                d="M 26 126 Q 44 122 62 126"
+                fill="none"
+                stroke="#ffffff"
+                strokeWidth="2.25"
+                strokeLinecap="round"
+                opacity="0.42"
+              />
+              <rect x="24" y="124" width="40" height="1.5" rx="0.75" fill="#ffffff" opacity="0.2" />
               <text
                 x="44"
-                y="138.5"
+                y="137.5"
                 textAnchor="middle"
-                fontSize="9.5"
-                fontWeight="800"
-                fill="#ffffff"
+                fontSize="10"
+                fontWeight="900"
+                fill="#fff7ed"
                 fontFamily="system-ui, sans-serif"
-                letterSpacing="0.12em"
+                letterSpacing="0.14em"
+                style={{ paintOrder: "stroke fill", stroke: "#7c2d12", strokeWidth: "0.55px" }}
               >
                 SEND
               </text>
