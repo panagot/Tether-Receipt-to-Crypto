@@ -193,7 +193,14 @@ export function App() {
         <div className="top-bar__inner">
           <div className="brand">
             <div className="brand__mark brand__mark--tether" aria-hidden="true">
-              ₮
+              <img
+                className="brand__mark__img"
+                src="/tether-brand.png"
+                alt=""
+                width={36}
+                height={36}
+                decoding="async"
+              />
             </div>
             <div>
               <div className="brand__text">Receipt to Crypto</div>

@@ -146,15 +146,20 @@ body {
   letter-spacing: -0.02em;
 }
 
-/* Tether-style mark (USDT ₮) — matches favicon treatment */
+/* Official Tether mark image (public/tether-brand.png) */
 .brand__mark--tether {
   border-radius: 50%;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 1.15rem;
-  font-weight: 900;
-  letter-spacing: 0;
-  background: linear-gradient(145deg, #5ee9a8 0%, #34d399 40%, #26a17b 100%);
-  box-shadow: 0 2px 12px rgba(38, 161, 123, 0.45);
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: 0 2px 12px rgba(38, 161, 123, 0.35);
+}
+
+.brand__mark__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .brand__text {
