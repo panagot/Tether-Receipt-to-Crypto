@@ -50,8 +50,15 @@ export function ComicHeroIllustration() {
             <stop offset="25%" stopColor="#fb923c" />
             <stop offset="100%" stopColor="#c2410c" />
           </linearGradient>
+          <linearGradient id={`${sid}-dueBand`} x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#fef9c3" />
+            <stop offset="100%" stopColor="#fde047" />
+          </linearGradient>
           <filter id={`${sid}-ink`} x="-8%" y="-8%" width="116%" height="116%">
             <feDropShadow dx="0" dy="3" stdDeviation="0" floodColor="#0f1419" floodOpacity="0.12" />
+          </filter>
+          <filter id={`${sid}-bubbleShadow`} x="-6%" y="-6%" width="112%" height="118%">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="0.3" floodColor="#0f1419" floodOpacity="0.14" />
           </filter>
           <clipPath id={`${sid}-receipt-clip`}>
             <path d="M 12 8 L 12 162 L 140 162 L 140 8 L 126 0 L 112 8 L 98 0 L 84 8 L 70 0 L 56 8 L 42 0 L 28 8 Z" />
@@ -122,14 +129,26 @@ export function ComicHeroIllustration() {
                   />
                 ))}
               </g>
-              <rect x="26" y="108" width="56" height="13" rx="3" fill="#fde68a" stroke="#0f1419" strokeWidth="2" />
+              <rect
+                x="23"
+                y="105"
+                width="90"
+                height="15"
+                rx="4"
+                fill={`url(#${sid}-dueBand)`}
+                stroke="#0f1419"
+                strokeWidth="2"
+              />
               <text
-                x="30"
-                y="118"
-                fontSize="10"
+                x="68"
+                y="112.5"
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize="9"
                 fontWeight="800"
                 fill="#0f1419"
                 fontFamily="system-ui, sans-serif"
+                letterSpacing="0.04em"
               >
                 TOTAL DUE
               </text>
@@ -360,45 +379,49 @@ export function ComicHeroIllustration() {
         <circle cx="48" cy="68" r="5" fill="#93c5fd" stroke="#0f1419" strokeWidth="2" />
 
         {/* speech bubbles */}
-        <g>
-          <path
-            d="M 312 22 L 402 22 Q 414 22 414 34 L 414 50 Q 414 62 402 62 L 340 62 L 328 72 L 330 62 L 312 62 Q 300 62 300 50 L 300 34 Q 300 22 312 22 Z"
-            fill="#ffffff"
-            stroke="#0f1419"
-            strokeWidth="2.5"
-          />
-          <text
-            x="357"
-            y="48"
-            textAnchor="middle"
-            className="comic-bubble-text"
-            fontSize="11"
-            fontWeight="600"
-            fill="#0f1419"
-            fontStyle="italic"
-          >
-            Scan → pay
-          </text>
-        </g>
-        <g>
-          <path
-            d="M 24 188 L 118 188 Q 130 188 130 200 L 130 216 Q 130 228 118 228 L 44 228 L 34 238 L 36 228 L 24 228 Q 12 228 12 216 L 12 200 Q 12 188 24 188 Z"
-            fill="#ffffff"
-            stroke="#0f1419"
-            strokeWidth="2.5"
-          />
-          <text
-            x="71"
-            y="214"
-            textAnchor="middle"
-            className="comic-bubble-text"
-            fontSize="11"
-            fontWeight="600"
-            fill="#0f1419"
-            fontStyle="italic"
-          >
-            Pay in USDT
-          </text>
+        <g filter={`url(#${sid}-bubbleShadow)`}>
+          <g>
+            <path
+              d="M 312 22 L 402 22 Q 414 22 414 34 L 414 50 Q 414 62 402 62 L 340 62 L 328 72 L 330 62 L 312 62 Q 300 62 300 50 L 300 34 Q 300 22 312 22 Z"
+              fill="#ffffff"
+              stroke="#0f1419"
+              strokeWidth="2.5"
+            />
+            <text
+              x="357"
+              y="42"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              className="comic-bubble-text"
+              fontSize="11"
+              fontWeight="600"
+              fill="#0f1419"
+              fontStyle="italic"
+            >
+              Scan → pay
+            </text>
+          </g>
+          <g>
+            <path
+              d="M 24 188 L 118 188 Q 130 188 130 200 L 130 216 Q 130 228 118 228 L 44 228 L 34 238 L 36 228 L 24 228 Q 12 228 12 216 L 12 200 Q 12 188 24 188 Z"
+              fill="#ffffff"
+              stroke="#0f1419"
+              strokeWidth="2.5"
+            />
+            <text
+              x="71"
+              y="208"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              className="comic-bubble-text"
+              fontSize="11"
+              fontWeight="600"
+              fill="#0f1419"
+              fontStyle="italic"
+            >
+              Pay in USDT
+            </text>
+          </g>
         </g>
       </svg>
     </figure>
