@@ -46,6 +46,8 @@ npm run dev
 
 Run `verify:backend` (and optionally `verify:backend:extract`) before testing **Scan with smartphone** against a tunnel.
 
+**Vercel env copy-paste:** with `ngrok http 3847` running, run **`npm run vercel:env-snippet`** — it prints the exact **Key** and **Value** for `RTC_API_PROXY_TARGET` from ngrok’s local API. You still paste that into the Vercel dashboard (no CLI access from here).
+
 ## API (local)
 
 | Method | Path | Purpose |
