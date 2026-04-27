@@ -480,7 +480,9 @@ export function App() {
           <code className="rtc-api-origin-hint__code">VITE_API_BASE_URL</code> = your public API
           origin (no trailing slash; e.g. ngrok or Railway), then <strong>Redeploy</strong>. For
           local-only use, run <code className="rtc-api-origin-hint__code">npm run dev</code> instead of
-          the Vercel URL.
+          the Vercel URL. <strong>No redeploy:</strong> append{" "}
+          <code className="rtc-api-origin-hint__code">?rtc_api=https://your-tunnel-host</code> once
+          (HTTPS tunnel required from a secure Vercel page).
         </p>
       )}
       <header className="top-bar">

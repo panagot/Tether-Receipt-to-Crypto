@@ -61,6 +61,10 @@ Import this repo in [Vercel](https://vercel.com): build runs `npm run build` and
 
 If you open the production site without `VITE_API_BASE_URL`, the UI shows a red banner explaining the mismatch.
 
+**Without a Vercel redeploy:** open the production URL once with a query param, e.g.  
+`https://your-app.vercel.app/?rtc_api=https://xxxx.ngrok-free.app`  
+The origin is stored in `sessionStorage` for that tab and the address bar is cleaned up. Your API must use **HTTPS** (browsers block mixed content from `https://` pages to `http://` APIs). Then run `npm run verify:backend https://xxxx.ngrok-free.app` on your PC before scanning receipts.
+
 On **phones**, the hosted UI offers **Take photo with camera** (`capture="environment"`) and **Choose from gallery**; after a camera shot it **auto-starts extraction** when the API is reachable at the configured origin.
 
 ## Links
