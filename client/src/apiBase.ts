@@ -85,7 +85,3 @@ export function apiUrl(path: string): string {
   return `${origin}${p}`;
 }
 
-export function isStaticBuildWithoutRemoteApi(): boolean {
-  const prod = Boolean(vitePublicEnv()?.PROD);
-  return prod && !getApiOrigin();
-}

@@ -11,7 +11,7 @@
 5. **Settlement** — Receipts do not contain a Solana address. Use **Scan Receive QR** (camera or image) or paste a base58 / `solana:…` link. Optional **Use signer wallet** for a devnet self-send smoke test. Confirm checkbox → **Send USDT** → Explorer link.
 6. **Receipt search** — After each extract, the API indexes the receipt text with **QVAC embeddings** (first search may download a small embedding model). Use **Receipt search** for natural-language lookup over past scans (data in `.rtc-data/` on the API host).
 
-**Architecture:** Vite UI + Express API on your machine. Receipt bytes hit the **local** API; QVAC runs **OCR**, **LLM JSON extraction**, and optional **embedding** for search — no cloud inference for those steps. Configure `WALLET_SEED` + `USDT_MINT` for `/api/pay`. Static-only hosts do not serve `/api`; use `npm run dev` or `npm start` for the full loop, or bake **`VITE_API_BASE_URL`** into the client when the UI and API live on different origins.
+**Architecture:** Vite UI + Express API on your machine. Receipt bytes hit the **local** API; QVAC runs **OCR**, **LLM JSON extraction**, and optional **embedding** for search — no cloud inference for those steps. Configure `WALLET_SEED` + `USDT_MINT` for `/api/pay`. On **Vercel**, the repo includes **serverless `/api/*` proxies** (see `api/`) that forward to **`RTC_API_PROXY_TARGET`** so the browser can keep same-origin `/api` without rebaking `VITE_API_BASE_URL` when your tunnel URL changes. For very long extractions, prefer **`VITE_API_BASE_URL`** (browser → tunnel directly) or a paid Vercel function duration tier, because the proxy is capped by Vercel’s function timeout (e.g. 60s on Hobby).
 
 ## Requirements
 
@@ -60,20 +60,26 @@ Run `verify:backend` (and optionally `verify:backend:extract`) before testing **
 
 ## Vercel
 
-Import this repo in [Vercel](https://vercel.com): build runs `npm run build` and static output is `client/dist` (see `vercel.json`). Static deployments do not serve `/api/*` (Vercel returns a plain-text 404), so the client must call a **separate** API origin.
+Import this repo in [Vercel](https://vercel.com): build runs `npm run build`, static UI is `client/dist`, and **serverless routes** live under `api/` (see [`vercel.json`](vercel.json)).
 
-1. Run the API somewhere reachable from the phone (same machine + **ngrok** / **Cloudflare Tunnel**, or a cloud host).
-2. In Vercel **Project → Settings → Environment Variables**, set **`VITE_API_BASE_URL`** to that origin (no trailing slash), e.g. `https://xxxx.ngrok-free.app`, for **Production** (and Preview if you use it).
-3. Redeploy so the variable is baked into the bundle.
-4. From your PC: `npm run verify:backend -- https://xxxx.ngrok-free.app` and, when ready for a slow check, `npm run verify:backend -- https://xxxx.ngrok-free.app path/to/receipt.jpg` before scanning again.
+### Recommended: `RTC_API_PROXY_TARGET` (server env, survives tunnel URL changes)
 
-If you open the production site without `VITE_API_BASE_URL`, the UI shows a red banner explaining the mismatch.
+1. Run the real API somewhere with **HTTPS** (e.g. **ngrok** / **Cloudflare Tunnel** to the machine running `npm run dev` or `npm start`).
+2. In Vercel **Project → Settings → Environment Variables**, add **`RTC_API_PROXY_TARGET`** = that origin only (e.g. `https://xxxx.ngrok-free.app`, **no** trailing slash, **do not** append `/api`).
+3. **Redeploy.** The browser keeps calling same-origin **`/api/*`**; Vercel functions forward to your backend (allowlisted paths only). Update **`RTC_API_PROXY_TARGET`** when the tunnel URL changes — **no client rebuild**.
 
-**Without a Vercel redeploy:** open the production URL once with a query param, e.g.  
-`https://your-app.vercel.app/?rtc_api=https://xxxx.ngrok-free.app`  
-The origin is stored in `sessionStorage` for that tab and the address bar is cleaned up. Your API must use **HTTPS** (browsers block mixed content from `https://` pages to `http://` APIs). Then run `npm run verify:backend https://xxxx.ngrok-free.app` on your PC before scanning receipts.
+**Limits:** Vercel **function wall-clock** (e.g. **60s** on this repo’s proxy) may cut off a slow first **QVAC** extract. If that happens, use **`VITE_API_BASE_URL`** at build time so the browser talks to the tunnel directly, or raise limits on a paid plan.
 
-On **phones**, the hosted UI offers **Take photo with camera** (`capture="environment"`) and **Choose from gallery**; after a camera shot it **auto-starts extraction** when the API is reachable at the configured origin.
+### Alternatives
+
+- **`VITE_API_BASE_URL`** — bake the API origin into the static bundle at build time; change tunnel URL → rebuild + redeploy.
+- **`?rtc_api=https://…`** — one-time per-browser session override (no Vercel env); see banner copy on the live site when health fails.
+
+From your PC: `npm run verify:backend -- https://xxxx.ngrok-free.app` before scanning on a phone.
+
+The red **deployment** banner on [tether-receipt-to-crypto.vercel.app](https://tether-receipt-to-crypto.vercel.app/) appears only when **`/api/health`** fails in production **and** the client has no `VITE_` / `?rtc_api=` override — after **`RTC_API_PROXY_TARGET`** is set and the tunnel is up, health should succeed and the banner stays hidden.
+
+On **phones**, the hosted UI offers **Take photo with camera** (`capture="environment"`) and **Choose from gallery**; after a camera shot it **auto-starts extraction** when **`/api`** is reachable (Vercel proxy to **`RTC_API_PROXY_TARGET`**, or **`VITE_API_BASE_URL`**, or **`?rtc_api=`**).
 
 ## Links
 

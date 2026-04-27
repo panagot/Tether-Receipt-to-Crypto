@@ -1,6 +1,6 @@
 import { Html5Qrcode } from "html5-qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiUrl, isStaticBuildWithoutRemoteApi } from "./apiBase";
+import { apiUrl, getApiOrigin } from "./apiBase";
 import { parseJsonOrThrow } from "./apiJson";
 import { ComicHeroIllustration } from "./ComicHeroIllustration";
 import { explorerTxUrl } from "./explorerTx";
@@ -141,7 +141,8 @@ export function App() {
     void (async () => {
       try {
         const r = await fetch(apiUrl("/api/health"));
-        const j = await parseJsonOrThrow<ApiHealth>(r);
+        const j = await parseJsonOrThrow<ApiHealth & { error?: string }>(r);
+        if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
         setHealth(j);
         setHealthLoad("ok");
       } catch {
@@ -473,16 +474,18 @@ export function App() {
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
-      {isStaticBuildWithoutRemoteApi() && (
+      {import.meta.env.PROD && healthLoad === "error" && !getApiOrigin() && (
         <p className="rtc-api-origin-hint" role="status">
-          Static hosting has no <code className="rtc-api-origin-hint__code">/api</code>. In Vercel:{" "}
-          <strong>Project → Settings → Environment Variables</strong>, add{" "}
-          <code className="rtc-api-origin-hint__code">VITE_API_BASE_URL</code> = your public API
-          origin (no trailing slash; e.g. ngrok or Railway), then <strong>Redeploy</strong>. For
-          local-only use, run <code className="rtc-api-origin-hint__code">npm run dev</code> instead of
-          the Vercel URL. <strong>No redeploy:</strong> append{" "}
-          <code className="rtc-api-origin-hint__code">?rtc_api=https://your-tunnel-host</code> once
-          (HTTPS tunnel required from a secure Vercel page).
+          The app cannot reach <code className="rtc-api-origin-hint__code">/api</code> (static host or
+          tunnel down). <strong>Easiest on Vercel:</strong>{" "}
+          <strong>Project → Settings → Environment Variables</strong> → add{" "}
+          <code className="rtc-api-origin-hint__code">RTC_API_PROXY_TARGET</code> = your API origin
+          (HTTPS, no trailing slash; e.g. ngrok), then <strong>Redeploy</strong> — same-origin{" "}
+          <code className="rtc-api-origin-hint__code">/api/*</code> is proxied server-side (no client
+          rebuild when the tunnel URL changes). Alternatives:{" "}
+          <code className="rtc-api-origin-hint__code">VITE_API_BASE_URL</code> at build time, or open
+          once with <code className="rtc-api-origin-hint__code">?rtc_api=https://your-tunnel</code>. For
+          laptop-only use, run <code className="rtc-api-origin-hint__code">npm run dev</code>.
         </p>
       )}
       <header className="top-bar">
