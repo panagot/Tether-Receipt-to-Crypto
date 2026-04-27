@@ -28,7 +28,7 @@
     "test:all": "npm run build && npm run test:unit && npm run verify:backend",
     "verify:backend:extract": "node scripts/verify-backend.mjs test/fixtures/tiny-receipt.jpg",
     "gen:fixture:tiny-receipt": "node scripts/gen-tiny-receipt-fixture.mjs",
-    "vercel:env-snippet": "node scripts/vercel-env-from-ngrok.mjs"
+    "vercel:env-snippet": "node scripts/vercel-env-snippet.mjs"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",

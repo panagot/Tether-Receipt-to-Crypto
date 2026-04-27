@@ -46,7 +46,7 @@ npm run dev
 
 Run `verify:backend` (and optionally `verify:backend:extract`) before testing **Scan with smartphone** against a tunnel.
 
-**Vercel env copy-paste:** with `ngrok http 3847` running, run **`npm run vercel:env-snippet`** — it prints the exact **Key** and **Value** for `RTC_API_PROXY_TARGET` from ngrok’s local API. You still paste that into the Vercel dashboard (no CLI access from here).
+**Vercel env copy-paste:** run **`npm run vercel:env-snippet`** (API must be up on **3847**). It tries, in order: **`RTC_PUBLIC_API_URL`** / **`RTC_API_PROXY_TARGET`** if you already set them; **ngrok** (`http://127.0.0.1:4040/api/tunnels`); then starts a **Cloudflare quick tunnel** (`cloudflared tunnel --url http://127.0.0.1:3847`) and prints **Key** + **Value** for `RTC_API_PROXY_TARGET`. Install Cloudflare Tunnel with **`winget install Cloudflare.cloudflared`** if needed. You still paste into the Vercel dashboard. Press **Ctrl+C** when the script is holding a quick tunnel open.
 
 ## API (local)
 
