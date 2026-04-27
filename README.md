@@ -47,9 +47,13 @@ npm run dev
 | POST | `/api/receipts/index` | JSON `{ merchant, total, category, ocrText }` → QVAC embed + save under `.rtc-data/` |
 | POST | `/api/receipts/search` | JSON `{ query, limit? }` → cosine-ranked receipt hits |
 
+**Embedding model issues:** Receipt search skips non-`.gguf` registry entries (e.g. stray `*.tensors.txt`) and tries several GGUFs in order. Override with `RTC_EMBEDDING_REGISTRY_PATH` set to a **registry path string** that matches `ModelRegistryEntry.registryPath` (see QVAC registry). If a download is corrupt, delete the broken folder under `~/.qvac/models/` and retry.
+
 ## Vercel
 
 Import this repo in [Vercel](https://vercel.com): build runs `npm run build` and static output is `client/dist` (see `vercel.json`). The UI calls `/api/*`; on a static deployment those routes are not served unless you add a separate backend or serverless routes, so point the production UI at your API host or use Vercel only for the frontend demo.
+
+On **phones**, the hosted UI offers **Take photo with camera** (`capture="environment"`) and **Choose from gallery**; after a camera shot it **auto-starts extraction** when `/api` is available (e.g. tunnel to your laptop running `npm run dev`, or a deployed API).
 
 ## Links
 

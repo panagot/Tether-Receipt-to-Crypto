@@ -1288,3 +1288,48 @@ button.secondary--ghost:hover:not(:disabled) {
   color: var(--ink-muted);
 }
 
+.capture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.capture-actions__camera {
+  flex: 1 1 200px;
+  min-height: 48px;
+  font-size: 1rem;
+  touch-action: manipulation;
+}
+
+.capture-actions__gallery {
+  flex: 1 1 160px;
+  min-height: 48px;
+  touch-action: manipulation;
+}
+
+.capture-note {
+  margin: 0.65rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+
+.drop__hint--mobile {
+  display: block;
+}
+
+.drop__hint--desktop {
+  display: none;
+}
+
+@media (min-width: 721px) {
+  .drop__hint--mobile {
+    display: none;
+  }
+
+  .drop__hint--desktop {
+    display: block;
+  }
+}
+

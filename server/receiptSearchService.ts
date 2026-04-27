@@ -34,32 +34,81 @@ function registrySrc(entry: ModelRegistryEntry): string {
   return `registry://${entry.registrySource}/${entry.registryPath}`;
 }
 
-async function pickSmallestEmbeddingModel(): Promise<ModelRegistryEntry> {
+/** Prefer a real `.gguf` weight file — registry also lists tiny sidecars (e.g. `*.tensors.txt`) that break `gguf_file_load`. */
+function isPrimaryEmbeddingGguf(entry: ModelRegistryEntry): boolean {
+  const p = entry.registryPath.toLowerCase();
+  if (!p.endsWith(".gguf")) return false;
+  if (p.includes("tensors") || p.includes("readme")) return false;
+  const shard = p.match(/-(\d{5})-of-(\d{5})\.gguf$/);
+  if (shard && shard[1] !== "00001") return false;
+  return true;
+}
+
+function rankEmbeddingCandidates(entries: ModelRegistryEntry[]): ModelRegistryEntry[] {
+  const primaries = entries.filter(isPrimaryEmbeddingGguf);
+  const pool = primaries.length > 0 ? primaries : entries.filter((e) => e.registryPath.toLowerCase().endsWith(".gguf"));
+  if (pool.length === 0) {
+    return [...entries];
+  }
+  const bulky = (p: string) =>
+    /gte-large|e5-large|large.*fp16|multilingual-e5-large/i.test(p) ? 1 : 0;
+  return [...pool].sort((a, b) => {
+    const pa = a.registryPath.toLowerCase();
+    const pb = b.registryPath.toLowerCase();
+    const wa = bulky(pa) * 4 * 1024 ** 3 + a.expectedSize;
+    const wb = bulky(pb) * 4 * 1024 ** 3 + b.expectedSize;
+    return wa - wb;
+  });
+}
+
+async function listEmbeddingLoadOrder(): Promise<ModelRegistryEntry[]> {
   const list = await modelRegistrySearch({ modelType: "embeddings" });
   if (!list.length) {
     throw new Error("No QVAC embedding models found in registry.");
   }
-  return [...list].sort((a, b) => a.expectedSize - b.expectedSize)[0];
+  const envPath = process.env.RTC_EMBEDDING_REGISTRY_PATH?.trim();
+  if (envPath) {
+    const hit = list.find(
+      (e: ModelRegistryEntry) => e.registryPath === envPath || e.registryPath.endsWith(envPath)
+    );
+    if (hit) {
+      const rest = rankEmbeddingCandidates(list).filter(
+        (e: ModelRegistryEntry) => e.registryPath !== hit.registryPath
+      );
+      return [hit, ...rest];
+    }
+  }
+  return rankEmbeddingCandidates(list);
 }
 
 async function ensureEmbedModel(): Promise<string> {
   if (embedModelId) return embedModelId;
-  const entry = await pickSmallestEmbeddingModel();
-  const id = await loadModel({
-    modelSrc: registrySrc(entry),
-    modelType: "embeddings",
-    modelConfig: {},
-    onProgress: (p: ModelProgressUpdate) => {
-      const pct = p.percentage;
-      if (pct == null) return;
-      if (pct === 100 || pct % 25 === 0) {
-        console.log("[receipt-search] embedding model load", Math.round(pct), "%");
-      }
-    },
-  });
-  embedModelId = id;
-  console.log("[receipt-search] embedding model:", entry.name, entry.registryPath);
-  return id;
+  const candidates = await listEmbeddingLoadOrder();
+  let lastErr: Error | null = null;
+  for (const entry of candidates.slice(0, 12)) {
+    try {
+      console.log("[receipt-search] loading embedding model:", entry.name, entry.registryPath);
+      const id = await loadModel({
+        modelSrc: registrySrc(entry),
+        modelType: "embeddings",
+        modelConfig: {},
+        onProgress: (p: ModelProgressUpdate) => {
+          const pct = p.percentage;
+          if (pct == null) return;
+          if (pct === 100 || pct % 25 === 0) {
+            console.log("[receipt-search] embedding model load", Math.round(pct), "%");
+          }
+        },
+      });
+      embedModelId = id;
+      console.log("[receipt-search] embedding model ready:", entry.name, entry.registryPath);
+      return id;
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+      console.warn("[receipt-search] embed load failed, trying next:", lastErr.message);
+    }
+  }
+  throw lastErr ?? new Error("Could not load any QVAC embedding model for receipt search.");
 }
 
 function flattenEmbedding(e: unknown): number[] {

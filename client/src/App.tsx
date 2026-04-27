@@ -99,6 +99,9 @@ export function App() {
   const [sigCopied, setSigCopied] = useState(false);
   const [previewLoadError, setPreviewLoadError] = useState<string | null>(null);
   const [extractSlowHint, setExtractSlowHint] = useState(false);
+  /** After taking a photo with the device camera, run extraction once the file is in state. */
+  const [autoExtractAfterCamera, setAutoExtractAfterCamera] = useState(false);
+  const fileCameraRef = useRef<HTMLInputElement>(null);
   const [indexNote, setIndexNote] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ReceiptSearchHit[]>([]);
@@ -141,8 +144,9 @@ export function App() {
     }
   }, [recipient, memo, amountBase]);
 
-  const onFile = useCallback((f: File | null) => {
+  const onFile = useCallback((f: File | null, opts?: { fromCamera?: boolean }) => {
     setPreviewLoadError(null);
+    setAutoExtractAfterCamera(false);
     if (f && !isAllowedReceiptFile(f)) {
       setPreviewUrl((prevUrl) => {
         if (prevUrl) URL.revokeObjectURL(prevUrl);
@@ -166,6 +170,9 @@ export function App() {
     setSuggestedBase(null);
     setPayResult(null);
     setError(null);
+    if (f && opts?.fromCamera) {
+      setAutoExtractAfterCamera(true);
+    }
   }, []);
 
   const clearReceipt = useCallback(() => {
@@ -249,6 +256,12 @@ export function App() {
       setLoading(false);
     }
   }, [file]);
+
+  useEffect(() => {
+    if (!autoExtractAfterCamera || !file || loading) return;
+    setAutoExtractAfterCamera(false);
+    void extract();
+  }, [autoExtractAfterCamera, file, loading, extract]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -618,7 +631,7 @@ export function App() {
             onClick={() => document.getElementById("file")?.click()}
             role="button"
             tabIndex={0}
-            aria-label="Upload receipt image"
+            aria-label="Choose receipt image from files"
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
@@ -629,28 +642,73 @@ export function App() {
             <input
               id="file"
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/*"
               style={{ display: "none" }}
               onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+            />
+            <input
+              ref={fileCameraRef}
+              id="file-camera"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                e.target.value = "";
+                if (!f) return;
+                onFile(f, { fromCamera: true });
+              }}
             />
             <UploadIcon />
             {file ? (
               <>
                 <div className="drop__title">Receipt selected</div>
                 <div className="drop__file">{file.name}</div>
-                <div className="drop__hint">Click to replace · JPEG, PNG, or WebP</div>
+                <div className="drop__hint">Tap below to replace, or use camera / gallery</div>
               </>
             ) : (
               <>
-                <div className="drop__title">Drop receipt here or browse</div>
-                <div className="drop__hint">
-                  Camera photos and scans work best with good lighting ·{" "}
+                <div className="drop__title">Receipt photo</div>
+                <div className="drop__hint drop__hint--mobile">
+                  Use your phone camera for a paper receipt, or upload a JPEG / PNG / WebP.
+                </div>
+                <div className="drop__hint drop__hint--desktop">
+                  Drop a file here or click to browse ·{" "}
                   <kbd className="kbd-hint">Ctrl</kbd> or <kbd className="kbd-hint">⌘</kbd> +{" "}
                   <kbd className="kbd-hint">Enter</kbd> runs extraction when a file is selected
                 </div>
               </>
             )}
           </div>
+
+          <div className="capture-actions">
+            <button
+              type="button"
+              className="primary capture-actions__camera"
+              onClick={(e) => {
+                e.stopPropagation();
+                fileCameraRef.current?.click();
+              }}
+            >
+              Take photo with camera
+            </button>
+            <button
+              type="button"
+              className="secondary capture-actions__gallery"
+              onClick={(e) => {
+                e.stopPropagation();
+                document.getElementById("file")?.click();
+              }}
+            >
+              Choose from gallery
+            </button>
+          </div>
+          <p className="capture-note">
+            After a <strong>camera</strong> shot, extraction starts automatically once the API is reachable
+            (self-hosted <code className="footer-code">npm run dev</code> or your backend — static Vercel UI
+            alone cannot run QVAC).
+          </p>
 
           <div className="actions">
             <button className="secondary" type="button" disabled={!file || loading} onClick={extract}>
