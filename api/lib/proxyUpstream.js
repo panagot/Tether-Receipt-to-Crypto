@@ -1,8 +1,7 @@
 /**
- * Vercel serverless: forwards allowlisted /api/* to RTC_API_PROXY_TARGET (your tunnel or host).
- * No client rebuild when the tunnel URL changes — set RTC_API_PROXY_TARGET in Vercel and redeploy.
+ * Vercel serverless: forwards allowlisted /api/* to RTC_API_PROXY_TARGET.
+ * Plain JS — avoids TS/bundler edge cases with dynamic api routes on Vercel.
  */
-import type { IncomingMessage, ServerResponse } from "node:http";
 
 const ALLOWED_PATHS = new Set([
   "/api/health",
@@ -12,21 +11,20 @@ const ALLOWED_PATHS = new Set([
   "/api/receipts/search",
 ]);
 
-/** Only `maxDuration` in route files — `api.bodyParser` is for Pages router and can crash root `api/` handlers on Vercel. */
 export const vercelRouteConfig = {
   maxDuration: 60,
 };
 
-function targetBase(): string | null {
+function targetBase() {
   const t = process.env.RTC_API_PROXY_TARGET?.trim();
   if (!t) return null;
   return t.replace(/\/$/, "");
 }
 
-function readBody(req: IncomingMessage): Promise<Buffer> {
+function readBody(req) {
   return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer | string) => {
+    const chunks = [];
+    req.on("data", (c) => {
       chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c, "binary"));
     });
     req.on("end", () => resolve(Buffer.concat(chunks)));
@@ -34,9 +32,8 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
   });
 }
 
-/** Vercel may pass `req.url` as path+query or as an absolute URL — normalize to `/api/...?…`. */
-function pathWithQueryFromReq(req: IncomingMessage): { pathname: string; pathWithQuery: string } {
-  const raw = (req as { url?: string }).url || "/";
+function pathWithQueryFromReq(req) {
+  const raw = (req && typeof req.url === "string" && req.url) || "/";
   if (raw.startsWith("/")) {
     const pathname = raw.split("?")[0] || "/";
     return { pathname, pathWithQuery: raw };
@@ -52,9 +49,11 @@ function pathWithQueryFromReq(req: IncomingMessage): { pathname: string; pathWit
   }
 }
 
-/** Avoid passing odd client / edge headers into `fetch()` (can throw or confuse upstream). */
-function buildUpstreamHeaders(req: IncomingMessage): Headers {
+function buildUpstreamHeaders(req) {
   const headers = new Headers();
+  const h = req && req.headers;
+  if (!h || typeof h !== "object") return headers;
+
   const pass = [
     "content-type",
     "authorization",
@@ -65,21 +64,21 @@ function buildUpstreamHeaders(req: IncomingMessage): Headers {
     "x-request-id",
   ];
   for (const name of pass) {
-    const v = req.headers[name];
+    const v = h[name];
     if (v == null) continue;
     const s = Array.isArray(v) ? v.filter(Boolean).join(", ") : String(v);
     if (s) {
       try {
         headers.set(name, s);
       } catch {
-        /* ignore invalid header */
+        /* ignore */
       }
     }
   }
   return headers;
 }
 
-export async function proxyToRtcApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function proxyToRtcApi(req, res) {
   const { pathname, pathWithQuery } = pathWithQueryFromReq(req);
 
   if (!pathname.startsWith("/api/")) {
@@ -103,22 +102,22 @@ export async function proxyToRtcApi(req: IncomingMessage, res: ServerResponse): 
     res.end(
       JSON.stringify({
         error:
-          "Vercel proxy is not configured. Set environment variable RTC_API_PROXY_TARGET to your API origin (e.g. https://xxxx.ngrok-free.app, no trailing slash), then redeploy. Alternatively use VITE_API_BASE_URL at build time or ?rtc_api= on the client.",
+          "Vercel proxy is not configured. Set RTC_API_PROXY_TARGET (https origin, no trailing slash), then redeploy.",
       })
     );
     return;
   }
 
   const upstreamUrl = base + pathWithQuery;
-
   const headers = buildUpstreamHeaders(req);
 
-  let body: Buffer | undefined;
-  if (req.method !== "GET" && req.method !== "HEAD") {
+  let body;
+  const method = (req.method || "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") {
     body = await readBody(req);
   }
 
-  let upstream: Response;
+  let upstream;
   try {
     upstream = await fetch(upstreamUrl, {
       method: req.method || "GET",
@@ -143,7 +142,7 @@ export async function proxyToRtcApi(req: IncomingMessage, res: ServerResponse): 
     try {
       res.setHeader(key, value);
     } catch {
-      /* ignore invalid header names for Node */
+      /* ignore */
     }
   });
 
@@ -151,8 +150,7 @@ export async function proxyToRtcApi(req: IncomingMessage, res: ServerResponse): 
   res.end(buf);
 }
 
-/** Wraps proxy; returns JSON 500 on unexpected errors so the function does not crash. */
-export async function proxyToRtcApiSafe(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function proxyToRtcApiSafe(req, res) {
   try {
     await proxyToRtcApi(req, res);
   } catch (e) {
