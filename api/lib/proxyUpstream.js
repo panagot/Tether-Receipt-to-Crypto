@@ -1,7 +1,10 @@
 /**
  * Vercel serverless: forwards allowlisted /api/* to RTC_API_PROXY_TARGET.
- * Plain JS — avoids TS/bundler edge cases with dynamic api routes on Vercel.
+ * Uses node:http / node:https only (no global fetch / Web Headers — avoids runtime crashes).
  */
+
+import * as http from "node:http";
+import * as https from "node:https";
 
 const ALLOWED_PATHS = new Set([
   "/api/health",
@@ -10,10 +13,6 @@ const ALLOWED_PATHS = new Set([
   "/api/receipts/index",
   "/api/receipts/search",
 ]);
-
-export const vercelRouteConfig = {
-  maxDuration: 60,
-};
 
 function targetBase() {
   const t = process.env.RTC_API_PROXY_TARGET?.trim();
@@ -49,10 +48,11 @@ function pathWithQueryFromReq(req) {
   }
 }
 
+/** Plain object for node client request (not Web Headers). */
 function buildUpstreamHeaders(req) {
-  const headers = new Headers();
+  const out = {};
   const h = req && req.headers;
-  if (!h || typeof h !== "object") return headers;
+  if (!h || typeof h !== "object") return out;
 
   const pass = [
     "content-type",
@@ -67,15 +67,41 @@ function buildUpstreamHeaders(req) {
     const v = h[name];
     if (v == null) continue;
     const s = Array.isArray(v) ? v.filter(Boolean).join(", ") : String(v);
-    if (s) {
-      try {
-        headers.set(name, s);
-      } catch {
-        /* ignore */
-      }
-    }
+    if (s) out[name] = s;
   }
-  return headers;
+  return out;
+}
+
+function nodeUpstreamRequest(urlStr, method, headerObj, bodyBuf) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(urlStr);
+    const lib = u.protocol === "https:" ? https : http;
+    const defaultPort = u.protocol === "https:" ? 443 : 80;
+    const port = u.port ? Number(u.port) : defaultPort;
+
+    const opts = {
+      hostname: u.hostname,
+      port,
+      path: u.pathname + (u.search || ""),
+      method: method || "GET",
+      headers: headerObj,
+    };
+
+    const req2 = lib.request(opts, (resp) => {
+      const chunks = [];
+      resp.on("data", (c) => chunks.push(c));
+      resp.on("end", () => {
+        resolve({
+          statusCode: resp.statusCode || 502,
+          headers: resp.headers,
+          body: Buffer.concat(chunks),
+        });
+      });
+    });
+    req2.on("error", reject);
+    if (bodyBuf && bodyBuf.length > 0) req2.write(bodyBuf);
+    req2.end();
+  });
 }
 
 export async function proxyToRtcApi(req, res) {
@@ -109,7 +135,7 @@ export async function proxyToRtcApi(req, res) {
   }
 
   const upstreamUrl = base + pathWithQuery;
-  const headers = buildUpstreamHeaders(req);
+  const headerObj = buildUpstreamHeaders(req);
 
   let body;
   const method = (req.method || "GET").toUpperCase();
@@ -117,37 +143,39 @@ export async function proxyToRtcApi(req, res) {
     body = await readBody(req);
   }
 
-  let upstream;
+  let result;
   try {
-    upstream = await fetch(upstreamUrl, {
-      method: req.method || "GET",
-      headers,
-      body: body && body.length > 0 ? body : undefined,
-    });
+    result = await nodeUpstreamRequest(
+      upstreamUrl,
+      req.method || "GET",
+      headerObj,
+      body && body.length > 0 ? body : null
+    );
   } catch (e) {
     res.statusCode = 502;
     res.setHeader("Content-Type", "application/json");
     res.end(
       JSON.stringify({
-        error: `upstream fetch failed: ${e instanceof Error ? e.message : String(e)}`,
+        error: `upstream request failed: ${e instanceof Error ? e.message : String(e)}`,
       })
     );
     return;
   }
 
-  res.statusCode = upstream.status;
-  upstream.headers.forEach((value, key) => {
+  res.statusCode = result.statusCode;
+  for (const key of Object.keys(result.headers)) {
+    const v = result.headers[key];
+    if (v == null) continue;
     const lk = key.toLowerCase();
-    if (lk === "transfer-encoding") return;
+    if (lk === "transfer-encoding") continue;
     try {
-      res.setHeader(key, value);
+      res.setHeader(key, v);
     } catch {
-      /* ignore */
+      /* ignore invalid / duplicate */
     }
-  });
+  }
 
-  const buf = Buffer.from(await upstream.arrayBuffer());
-  res.end(buf);
+  res.end(result.body);
 }
 
 export async function proxyToRtcApiSafe(req, res) {
