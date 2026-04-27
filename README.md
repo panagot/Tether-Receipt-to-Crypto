@@ -11,7 +11,7 @@
 5. **Settlement** — Receipts do not contain a Solana address. Use **Scan Receive QR** (camera or image) or paste a base58 / `solana:…` link. Optional **Use signer wallet** for a devnet self-send smoke test. Confirm checkbox → **Send USDT** → Explorer link.
 6. **Receipt search** — After each extract, the API indexes the receipt text with **QVAC embeddings** (first search may download a small embedding model). Use **Receipt search** for natural-language lookup over past scans (data in `.rtc-data/` on the API host).
 
-**Architecture:** Vite UI + Express API on your machine. Receipt bytes hit the **local** API; QVAC runs **OCR**, **LLM JSON extraction**, and optional **embedding** for search — no cloud inference for those steps. Configure `WALLET_SEED` + `USDT_MINT` for `/api/pay`. Static-only hosts do not serve `/api`; use `npm run dev` or `npm start` for the full loop.
+**Architecture:** Vite UI + Express API on your machine. Receipt bytes hit the **local** API; QVAC runs **OCR**, **LLM JSON extraction**, and optional **embedding** for search — no cloud inference for those steps. Configure `WALLET_SEED` + `USDT_MINT` for `/api/pay`. Static-only hosts do not serve `/api`; use `npm run dev` or `npm start` for the full loop, or bake **`VITE_API_BASE_URL`** into the client when the UI and API live on different origins.
 
 ## Requirements
 
@@ -36,6 +36,7 @@ npm run dev
 - `npm run dev:server` / `npm run dev:client` — separately  
 - `npm run build` — typecheck server + build client  
 - `npm start` — production API (serve `client/dist` if `NODE_ENV=production` and built)
+- `npm run verify:backend` — `GET /api/health` (and optional `POST /api/extract` with a JPEG path). Uses `RTC_API_BASE` or the first CLI arg (default `http://127.0.0.1:3847`). Run this before testing **Scan with smartphone** against a tunnel.
 
 ## API (local)
 
@@ -51,9 +52,16 @@ npm run dev
 
 ## Vercel
 
-Import this repo in [Vercel](https://vercel.com): build runs `npm run build` and static output is `client/dist` (see `vercel.json`). The UI calls `/api/*`; on a static deployment those routes are not served unless you add a separate backend or serverless routes, so point the production UI at your API host or use Vercel only for the frontend demo.
+Import this repo in [Vercel](https://vercel.com): build runs `npm run build` and static output is `client/dist` (see `vercel.json`). Static deployments do not serve `/api/*` (Vercel returns a plain-text 404), so the client must call a **separate** API origin.
 
-On **phones**, the hosted UI offers **Take photo with camera** (`capture="environment"`) and **Choose from gallery**; after a camera shot it **auto-starts extraction** when `/api` is available (e.g. tunnel to your laptop running `npm run dev`, or a deployed API).
+1. Run the API somewhere reachable from the phone (same machine + **ngrok** / **Cloudflare Tunnel**, or a cloud host).
+2. In Vercel **Project → Settings → Environment Variables**, set **`VITE_API_BASE_URL`** to that origin (no trailing slash), e.g. `https://xxxx.ngrok-free.app`, for **Production** (and Preview if you use it).
+3. Redeploy so the variable is baked into the bundle.
+4. From your PC: `npm run verify:backend https://xxxx.ngrok-free.app` (and optionally a sample receipt path) before scanning again.
+
+If you open the production site without `VITE_API_BASE_URL`, the UI shows a red banner explaining the mismatch.
+
+On **phones**, the hosted UI offers **Take photo with camera** (`capture="environment"`) and **Choose from gallery**; after a camera shot it **auto-starts extraction** when the API is reachable at the configured origin.
 
 ## Links
 

@@ -7,6 +7,8 @@ const clientDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   root: clientDir,
+  /** Load `VITE_*` from project root `.env` (not only `client/.env`). */
+  envDir: path.join(clientDir, ".."),
   plugins: [react()],
   server: {
     port: 5173,

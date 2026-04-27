@@ -19,7 +19,8 @@
     "start": "node --import tsx server/index.ts",
     "diag:receipt-file": "node scripts/check-receipt-file.mjs",
     "diag:extract": "node scripts/post-extract.mjs",
-    "test:smoke-extract": "node scripts/smoke-extract-receipt.mjs"
+    "test:smoke-extract": "node scripts/smoke-extract-receipt.mjs",
+    "verify:backend": "node scripts/verify-backend.mjs"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",

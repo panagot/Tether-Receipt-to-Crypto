@@ -1,5 +1,6 @@
 import { Html5Qrcode } from "html5-qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiUrl, isStaticBuildWithoutRemoteApi } from "./apiBase";
 import { parseJsonOrThrow } from "./apiJson";
 import { ComicHeroIllustration } from "./ComicHeroIllustration";
 import { explorerTxUrl } from "./explorerTx";
@@ -139,7 +140,7 @@ export function App() {
     setHealthLoad("loading");
     void (async () => {
       try {
-        const r = await fetch("/api/health");
+        const r = await fetch(apiUrl("/api/health"));
         const j = await parseJsonOrThrow<ApiHealth>(r);
         setHealth(j);
         setHealthLoad("ok");
@@ -219,7 +220,7 @@ export function App() {
     try {
       const fd = new FormData();
       fd.append("receipt", file);
-      const r = await fetch("/api/extract", { method: "POST", body: fd, signal: ac.signal });
+      const r = await fetch(apiUrl("/api/extract"), { method: "POST", body: fd, signal: ac.signal });
       const j = await parseJsonOrThrow<{
         error?: string;
         ocrText?: string;
@@ -236,7 +237,7 @@ export function App() {
         `${ext?.merchant ?? "payee"}|${ext?.category ?? "expense"}`.slice(0, 120)
       );
       setIndexNote(null);
-      void fetch("/api/receipts/index", {
+      void fetch(apiUrl("/api/receipts/index"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -304,7 +305,7 @@ export function App() {
     setPayResult(null);
     setSigCopied(false);
     try {
-      const r = await fetch("/api/pay", {
+      const r = await fetch(apiUrl("/api/pay"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -422,7 +423,7 @@ export function App() {
     setSearchLoading(true);
     setSearchError(null);
     try {
-      const r = await fetch("/api/receipts/search", {
+      const r = await fetch(apiUrl("/api/receipts/search"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: q, limit: 10 }),
@@ -472,6 +473,14 @@ export function App() {
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
+      {isStaticBuildWithoutRemoteApi() && (
+        <p className="rtc-api-origin-hint" role="status">
+          This build has no API on the same host. Set{" "}
+          <code className="rtc-api-origin-hint__code">VITE_API_BASE_URL</code> to your running API
+          (ngrok, Railway, etc.), rebuild, and redeploy — or open the app from{" "}
+          <code className="rtc-api-origin-hint__code">npm run dev</code> on your machine.
+        </p>
+      )}
       <header className="top-bar">
         <div className="top-bar__inner">
           <div className="brand">
