@@ -475,10 +475,12 @@ export function App() {
       </a>
       {isStaticBuildWithoutRemoteApi() && (
         <p className="rtc-api-origin-hint" role="status">
-          This build has no API on the same host. Set{" "}
-          <code className="rtc-api-origin-hint__code">VITE_API_BASE_URL</code> to your running API
-          (ngrok, Railway, etc.), rebuild, and redeploy — or open the app from{" "}
-          <code className="rtc-api-origin-hint__code">npm run dev</code> on your machine.
+          Static hosting has no <code className="rtc-api-origin-hint__code">/api</code>. In Vercel:{" "}
+          <strong>Project → Settings → Environment Variables</strong>, add{" "}
+          <code className="rtc-api-origin-hint__code">VITE_API_BASE_URL</code> = your public API
+          origin (no trailing slash; e.g. ngrok or Railway), then <strong>Redeploy</strong>. For
+          local-only use, run <code className="rtc-api-origin-hint__code">npm run dev</code> instead of
+          the Vercel URL.
         </p>
       )}
       <header className="top-bar">
