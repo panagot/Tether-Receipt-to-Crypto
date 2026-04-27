@@ -98,6 +98,7 @@ export function App() {
   const [dragActive, setDragActive] = useState(false);
   const [health, setHealth] = useState<ApiHealth | null>(null);
   const [healthLoad, setHealthLoad] = useState<"loading" | "ok" | "error">("loading");
+  const [healthDetail, setHealthDetail] = useState<string | null>(null);
   const [navHint, setNavHint] = useState<string | null>(null);
   const [sigCopied, setSigCopied] = useState(false);
   const [previewLoadError, setPreviewLoadError] = useState<string | null>(null);
@@ -138,15 +139,18 @@ export function App() {
 
   useEffect(() => {
     setHealthLoad("loading");
+    setHealthDetail(null);
     void (async () => {
       try {
         const r = await fetch(apiUrl("/api/health"));
         const j = await parseJsonOrThrow<ApiHealth & { error?: string }>(r);
         if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
         setHealth(j);
+        setHealthDetail(null);
         setHealthLoad("ok");
-      } catch {
+      } catch (e) {
         setHealth(null);
+        setHealthDetail(e instanceof Error ? e.message : String(e));
         setHealthLoad("error");
       }
     })();
@@ -486,6 +490,12 @@ export function App() {
           <code className="rtc-api-origin-hint__code">VITE_API_BASE_URL</code> at build time, or open
           once with <code className="rtc-api-origin-hint__code">?rtc_api=https://your-tunnel</code>. For
           laptop-only use, run <code className="rtc-api-origin-hint__code">npm run dev</code>.
+          {healthDetail && (
+            <span className="rtc-api-origin-hint__detail" role="log">
+              {" "}
+              ({healthDetail})
+            </span>
+          )}
         </p>
       )}
       <header className="top-bar">

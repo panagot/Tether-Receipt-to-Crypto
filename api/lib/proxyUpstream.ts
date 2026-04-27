@@ -4,18 +4,6 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-const HOP_HEADERS = new Set([
-  "connection",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailers",
-  "transfer-encoding",
-  "upgrade",
-  "host",
-]);
-
 const ALLOWED_PATHS = new Set([
   "/api/health",
   "/api/extract",
@@ -24,8 +12,9 @@ const ALLOWED_PATHS = new Set([
   "/api/receipts/search",
 ]);
 
-export const runtimeProxyConfig = {
-  api: { bodyParser: false as const },
+/** Only `maxDuration` in route files — `api.bodyParser` is for Pages router and can crash root `api/` handlers on Vercel. */
+export const vercelRouteConfig = {
+  maxDuration: 60,
 };
 
 function targetBase(): string | null {
@@ -45,9 +34,53 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
   });
 }
 
+/** Vercel may pass `req.url` as path+query or as an absolute URL — normalize to `/api/...?…`. */
+function pathWithQueryFromReq(req: IncomingMessage): { pathname: string; pathWithQuery: string } {
+  const raw = (req as { url?: string }).url || "/";
+  if (raw.startsWith("/")) {
+    const pathname = raw.split("?")[0] || "/";
+    return { pathname, pathWithQuery: raw };
+  }
+  try {
+    const u = new URL(raw);
+    return {
+      pathname: u.pathname,
+      pathWithQuery: u.pathname + (u.search || ""),
+    };
+  } catch {
+    return { pathname: "/", pathWithQuery: "/api/health" };
+  }
+}
+
+/** Avoid passing odd client / edge headers into `fetch()` (can throw or confuse upstream). */
+function buildUpstreamHeaders(req: IncomingMessage): Headers {
+  const headers = new Headers();
+  const pass = [
+    "content-type",
+    "authorization",
+    "accept",
+    "accept-encoding",
+    "accept-language",
+    "user-agent",
+    "x-request-id",
+  ];
+  for (const name of pass) {
+    const v = req.headers[name];
+    if (v == null) continue;
+    const s = Array.isArray(v) ? v.filter(Boolean).join(", ") : String(v);
+    if (s) {
+      try {
+        headers.set(name, s);
+      } catch {
+        /* ignore invalid header */
+      }
+    }
+  }
+  return headers;
+}
+
 export async function proxyToRtcApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const rawUrl = (req as { url?: string }).url || "/";
-  const pathname = rawUrl.split("?")[0] || "/";
+  const { pathname, pathWithQuery } = pathWithQueryFromReq(req);
 
   if (!pathname.startsWith("/api/")) {
     res.statusCode = 400;
@@ -76,15 +109,9 @@ export async function proxyToRtcApi(req: IncomingMessage, res: ServerResponse): 
     return;
   }
 
-  const upstreamUrl = base + rawUrl;
+  const upstreamUrl = base + pathWithQuery;
 
-  const headers = new Headers();
-  for (const [key, val] of Object.entries(req.headers)) {
-    if (val == null) continue;
-    const lk = key.toLowerCase();
-    if (HOP_HEADERS.has(lk)) continue;
-    headers.set(key, Array.isArray(val) ? val.join(", ") : val);
-  }
+  const headers = buildUpstreamHeaders(req);
 
   let body: Buffer | undefined;
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -122,4 +149,24 @@ export async function proxyToRtcApi(req: IncomingMessage, res: ServerResponse): 
 
   const buf = Buffer.from(await upstream.arrayBuffer());
   res.end(buf);
+}
+
+/** Wraps proxy; returns JSON 500 on unexpected errors so the function does not crash. */
+export async function proxyToRtcApiSafe(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    await proxyToRtcApi(req, res);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (res.headersSent) {
+      try {
+        res.destroy();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    res.statusCode = 500;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "proxy crash", detail: msg }));
+  }
 }

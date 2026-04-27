@@ -109,6 +109,15 @@ body {
   border: 1px solid rgba(180, 35, 24, 0.12);
 }
 
+.rtc-api-origin-hint__detail {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  font-family: ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace;
+  word-break: break-word;
+  opacity: 0.92;
+}
+
 .top-bar {
   border-bottom: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.72);

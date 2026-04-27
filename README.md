@@ -62,7 +62,7 @@ Run `verify:backend` (and optionally `verify:backend:extract`) before testing **
 
 ## Vercel
 
-Import this repo in [Vercel](https://vercel.com): build runs `npm run build`, static UI is `client/dist`, and **serverless routes** live under `api/` (see [`vercel.json`](vercel.json)).
+Import this repo in [Vercel](https://vercel.com): build runs `npm run build`, static UI is `client/dist`, and **serverless routes** live under `api/` (see [`vercel.json`](vercel.json)). **Root Directory** in Vercel must be the **repository root** (where `vercel.json` and `api/` live), not `client/` — otherwise `/api/*` never deploys and health stays broken.
 
 ### Recommended: `RTC_API_PROXY_TARGET` (server env, survives tunnel URL changes)
 
@@ -71,6 +71,8 @@ Import this repo in [Vercel](https://vercel.com): build runs `npm run build`, st
 3. **Redeploy.** The browser keeps calling same-origin **`/api/*`**; Vercel functions forward to your backend (allowlisted paths only). Update **`RTC_API_PROXY_TARGET`** when the tunnel URL changes — **no client rebuild**.
 
 **Limits:** Vercel **function wall-clock** (e.g. **60s** on this repo’s proxy) may cut off a slow first **QVAC** extract. If that happens, use **`VITE_API_BASE_URL`** at build time so the browser talks to the tunnel directly, or raise limits on a paid plan.
+
+**Multipart `/api/extract`:** the serverless proxy forwards a small allowlist of headers; very large uploads or unusual multipart edge cases may behave more reliably with **`VITE_API_BASE_URL`** (browser → tunnel) than through this proxy.
 
 ### Alternatives
 
