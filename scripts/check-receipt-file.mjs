@@ -6,7 +6,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const p = path.resolve(process.argv[2] || "C:\\Users\\panag\\Desktop\\Receipt-template-example.jpg");
+const defaultFixture = path.join(process.cwd(), "test", "fixtures", "tiny-receipt.jpg");
+const p = path.resolve(process.argv[2] || defaultFixture);
 
 if (!fs.existsSync(p)) {
   console.error("[FAIL] File not found:", p);

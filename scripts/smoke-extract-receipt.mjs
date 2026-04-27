@@ -6,9 +6,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const filePath = path.resolve(
-  process.argv[2] || "C:\\Users\\panag\\Desktop\\Receipt-template-example.jpg"
-);
+const defaultFixture = path.join(process.cwd(), "test", "fixtures", "tiny-receipt.jpg");
+const filePath = path.resolve(process.argv[2] || defaultFixture);
 const base = (process.argv[3] || "http://127.0.0.1:3847").replace(/\/$/, "");
 const MAX_ATTEMPTS = Number(process.env.RTC_SMOKE_ATTEMPTS || 5);
 const BETWEEN_MS = Number(process.env.RTC_SMOKE_PAUSE_MS || 4000);

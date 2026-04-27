@@ -53,15 +53,23 @@ function syncRtcApiQueryOnce(): void {
   }
 }
 
+function vitePublicEnv(): Record<string, unknown> | undefined {
+  return (import.meta as unknown as { env?: Record<string, unknown> }).env;
+}
+
 export function getApiOrigin(): string {
   syncRtcApiQueryOnce();
 
-  const fromEnv = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ?? "";
+  const raw = vitePublicEnv()?.VITE_API_BASE_URL;
+  const fromEnv = typeof raw === "string" ? raw.trim() : "";
   if (fromEnv) return stripTrailingSlash(fromEnv);
 
   try {
     const stored = sessionStorage.getItem(STORAGE_KEY)?.trim() ?? "";
-    if (stored) return stripTrailingSlash(normalizeApiOrigin(stored) || stored);
+    if (stored) {
+      const normalized = normalizeApiOrigin(stored);
+      if (normalized) return stripTrailingSlash(normalized);
+    }
   } catch {
     /* private mode */
   }
@@ -78,5 +86,6 @@ export function apiUrl(path: string): string {
 }
 
 export function isStaticBuildWithoutRemoteApi(): boolean {
-  return import.meta.env.PROD && !getApiOrigin();
+  const prod = Boolean(vitePublicEnv()?.PROD);
+  return prod && !getApiOrigin();
 }

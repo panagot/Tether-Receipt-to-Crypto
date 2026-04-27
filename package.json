@@ -20,7 +20,14 @@
     "diag:receipt-file": "node scripts/check-receipt-file.mjs",
     "diag:extract": "node scripts/post-extract.mjs",
     "test:smoke-extract": "node scripts/smoke-extract-receipt.mjs",
-    "verify:backend": "node scripts/verify-backend.mjs"
+    "verify:backend": "node scripts/verify-backend.mjs",
+    "test:api-origin": "tsx scripts/test-api-origin.ts",
+    "test:api-json": "tsx scripts/test-api-json.ts",
+    "test:fixtures": "node scripts/check-receipt-file.mjs test/fixtures/tiny-receipt.jpg",
+    "test:unit": "npm run test:api-origin && npm run test:api-json && npm run test:fixtures",
+    "test:all": "npm run build && npm run test:unit && npm run verify:backend",
+    "verify:backend:extract": "node scripts/verify-backend.mjs test/fixtures/tiny-receipt.jpg",
+    "gen:fixture:tiny-receipt": "node scripts/gen-tiny-receipt-fixture.mjs"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",

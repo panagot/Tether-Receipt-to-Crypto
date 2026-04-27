@@ -3,21 +3,64 @@
  * Verifies the Receipt-to-Crypto API before testing the mobile UI.
  *
  * Usage:
- *   node scripts/verify-backend.mjs [apiBase] [optional-image-for-extract]
+ *   node scripts/verify-backend.mjs
+ *   node scripts/verify-backend.mjs [apiBase]
+ *   node scripts/verify-backend.mjs [apiBase] [path-to-receipt-image]
+ *   node scripts/verify-backend.mjs [path-to-receipt-image]   # uses RTC_API_BASE or http://127.0.0.1:3847
  *
  * Examples:
  *   node scripts/verify-backend.mjs
  *   node scripts/verify-backend.mjs http://127.0.0.1:3847
  *   node scripts/verify-backend.mjs https://xxxx.ngrok-free.app
  *   node scripts/verify-backend.mjs https://xxxx.ngrok-free.app C:\\path\\receipt.jpg
+ *   node scripts/verify-backend.mjs test/fixtures/tiny-receipt.jpg
  *
- * Env: RTC_API_BASE (same as first arg)
+ * Env: RTC_API_BASE (default API origin when first arg is an image path only)
  */
 import fs from "node:fs";
 import path from "node:path";
 
-const base = (process.argv[2] || process.env.RTC_API_BASE || "http://127.0.0.1:3847").replace(/\/$/, "");
-const imageArg = process.argv[3];
+const defaultBase = (process.env.RTC_API_BASE || "http://127.0.0.1:3847").replace(/\/$/, "");
+
+function looksHttp(s) {
+  return /^https?:\/\//i.test(s);
+}
+
+function looksImageFile(s) {
+  if (!s) return false;
+  if (!/\.(jpe?g|png|webp)$/i.test(s)) return false;
+  const abs = path.resolve(s);
+  try {
+    return fs.existsSync(abs) && fs.statSync(abs).isFile();
+  } catch {
+    return false;
+  }
+}
+
+const arg2 = process.argv[2];
+const arg3 = process.argv[3];
+
+let base = defaultBase;
+let imageArg;
+
+if (!arg2) {
+  /* defaults above */
+} else if (looksHttp(arg2)) {
+  base = arg2.replace(/\/$/, "");
+  imageArg = arg3;
+} else if (looksImageFile(arg2) && !arg3) {
+  imageArg = arg2;
+} else if (arg3) {
+  console.error("[FAIL] With two arguments, the first must be an http(s) API base URL.");
+  process.exit(1);
+} else {
+  console.error(
+    "[FAIL] Unrecognized first argument:",
+    arg2,
+    "— use an http(s) base URL, or a path to a .jpg/.png/.webp receipt file (with default base)."
+  );
+  process.exit(1);
+}
 
 function fail(msg) {
   console.error("[FAIL]", msg);
@@ -49,7 +92,10 @@ async function main() {
   console.log("[OK] Health JSON:", JSON.stringify(healthJson));
 
   if (!imageArg) {
-    console.log("\n[OK] Backend looks good. Add a JPEG path as 2nd arg to test /api/extract.");
+    console.log(
+      "\n[OK] Backend looks good. To test /api/extract: pass `http(s)://base path/to/receipt.jpg` " +
+        "or only a receipt path (uses RTC_API_BASE or http://127.0.0.1:3847), e.g. `test/fixtures/tiny-receipt.jpg`."
+    );
     process.exit(0);
   }
 

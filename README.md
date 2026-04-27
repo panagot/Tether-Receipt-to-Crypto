@@ -36,7 +36,15 @@ npm run dev
 - `npm run dev:server` / `npm run dev:client` — separately  
 - `npm run build` — typecheck server + build client  
 - `npm start` — production API (serve `client/dist` if `NODE_ENV=production` and built)
-- `npm run verify:backend` — `GET /api/health` (and optional `POST /api/extract` with a JPEG path). Uses `RTC_API_BASE` or the first CLI arg (default `http://127.0.0.1:3847`). Run this before testing **Scan with smartphone** against a tunnel.
+- `npm run verify:backend` — `GET /api/health` only (fast). Default base `http://127.0.0.1:3847` or `RTC_API_BASE` / first CLI arg if it is an `http(s)://` URL.
+- `npm run verify:backend -- https://tunnel.example` — health against a tunnel.
+- `npm run verify:backend -- test/fixtures/tiny-receipt.jpg` — health + `POST /api/extract` on the bundled tiny JPEG (can take minutes while QVAC loads models; override timeout with `RTC_EXTRACT_TIMEOUT_MS`).
+- `npm run verify:backend:extract` — same as the single-arg fixture command above.
+- `npm run test:unit` — no server: `apiBase` / `apiJson` contract tests + receipt fixture magic-bytes check.
+- `npm run test:all` — `build` + `test:unit` + `verify:backend` (start the API first, or health step fails).
+- `npm run gen:fixture:tiny-receipt` — regenerate `test/fixtures/tiny-receipt.jpg` if needed.
+
+Run `verify:backend` (and optionally `verify:backend:extract`) before testing **Scan with smartphone** against a tunnel.
 
 ## API (local)
 
@@ -57,7 +65,7 @@ Import this repo in [Vercel](https://vercel.com): build runs `npm run build` and
 1. Run the API somewhere reachable from the phone (same machine + **ngrok** / **Cloudflare Tunnel**, or a cloud host).
 2. In Vercel **Project → Settings → Environment Variables**, set **`VITE_API_BASE_URL`** to that origin (no trailing slash), e.g. `https://xxxx.ngrok-free.app`, for **Production** (and Preview if you use it).
 3. Redeploy so the variable is baked into the bundle.
-4. From your PC: `npm run verify:backend https://xxxx.ngrok-free.app` (and optionally a sample receipt path) before scanning again.
+4. From your PC: `npm run verify:backend -- https://xxxx.ngrok-free.app` and, when ready for a slow check, `npm run verify:backend -- https://xxxx.ngrok-free.app path/to/receipt.jpg` before scanning again.
 
 If you open the production site without `VITE_API_BASE_URL`, the UI shows a red banner explaining the mismatch.
 
