@@ -9,7 +9,7 @@
  *
  * Env:
  *   RTC_LOCAL_API_PORT — default 3847
- *   RTC_CLOUDFLARED_BIN — path to cloudflared if not on PATH
+ *   RTC_CLOUDFLARED_BIN — path to cloudflared if not on PATH (script also checks common Windows MSI paths)
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
