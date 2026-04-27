@@ -1,7 +1,9 @@
 import { Html5Qrcode } from "html5-qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { parseJsonOrThrow } from "./apiJson";
 import { ComicHeroIllustration } from "./ComicHeroIllustration";
 import { explorerTxUrl } from "./explorerTx";
+import { ReceiptCameraScanner } from "./ReceiptCameraScanner";
 import { isValidSolanaRecipient, parseRecipientFromScanOrPaste } from "./solanaRecipient";
 
 const SETTLEMENT_LS = "rtc:settlement-v1";
@@ -101,7 +103,10 @@ export function App() {
   const [extractSlowHint, setExtractSlowHint] = useState(false);
   /** After taking a photo with the device camera, run extraction once the file is in state. */
   const [autoExtractAfterCamera, setAutoExtractAfterCamera] = useState(false);
-  const fileCameraRef = useRef<HTMLInputElement>(null);
+  const [receiptScannerOpen, setReceiptScannerOpen] = useState(false);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(
+    () => (typeof window !== "undefined" ? window.matchMedia("(min-width: 721px)").matches : true)
+  );
   const [indexNote, setIndexNote] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ReceiptSearchHit[]>([]);
@@ -123,17 +128,26 @@ export function App() {
   }, [loading]);
 
   useEffect(() => {
+    const mq = window.matchMedia("(min-width: 721px)");
+    const sync = () => setIsDesktopLayout(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
     setHealthLoad("loading");
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then((j: ApiHealth) => {
+    void (async () => {
+      try {
+        const r = await fetch("/api/health");
+        const j = await parseJsonOrThrow<ApiHealth>(r);
         setHealth(j);
         setHealthLoad("ok");
-      })
-      .catch(() => {
+      } catch {
         setHealth(null);
         setHealthLoad("error");
-      });
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -180,6 +194,10 @@ export function App() {
     setConfirmed(false);
   }, [onFile]);
 
+  const openReceiptPicker = useCallback(() => {
+    document.getElementById("file")?.click();
+  }, []);
+
   const goToSection = useCallback((id: string, hintIfMissing?: string) => {
     const el = document.getElementById(id);
     if (el) {
@@ -202,12 +220,12 @@ export function App() {
       const fd = new FormData();
       fd.append("receipt", file);
       const r = await fetch("/api/extract", { method: "POST", body: fd, signal: ac.signal });
-      const j = (await r.json()) as {
+      const j = await parseJsonOrThrow<{
         error?: string;
         ocrText?: string;
         extraction?: Extraction;
         suggestedAmountBaseUnits?: number;
-      };
+      }>(r);
       if (!r.ok) throw new Error(j.error || r.statusText);
       setOcrText(j.ocrText || "");
       setExtraction(j.extraction ?? null);
@@ -229,12 +247,16 @@ export function App() {
         }),
       })
         .then(async (ir) => {
-          if (!ir.ok) {
-            const body = (await ir.json().catch(() => ({}))) as { error?: string };
-            setIndexNote(
-              body.error ||
-                "Could not index this receipt for local search (first run may download an embedding model)."
-            );
+          try {
+            const body = await parseJsonOrThrow<{ error?: string }>(ir);
+            if (!ir.ok) {
+              setIndexNote(
+                body.error ||
+                  "Could not index this receipt for local search (first run may download an embedding model)."
+              );
+            }
+          } catch (ie) {
+            setIndexNote(ie instanceof Error ? ie.message : "Receipt search index response was not JSON.");
           }
         })
         .catch(() => {
@@ -291,7 +313,7 @@ export function App() {
           memo: memo || undefined,
         }),
       });
-      const j = (await r.json()) as { error?: string; signature?: string };
+      const j = await parseJsonOrThrow<{ error?: string; signature?: string }>(r);
       if (!r.ok) throw new Error(j.error || r.statusText);
       setPayResult(j.signature ?? "");
     } catch (e) {
@@ -405,7 +427,7 @@ export function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: q, limit: 10 }),
       });
-      const j = (await r.json()) as { error?: string; results?: ReceiptSearchHit[] };
+      const j = await parseJsonOrThrow<{ error?: string; results?: ReceiptSearchHit[] }>(r);
       if (!r.ok) throw new Error(j.error || r.statusText);
       setSearchResults(j.results ?? []);
     } catch (e) {
@@ -616,7 +638,7 @@ export function App() {
           </div>
 
           <div
-            className={`drop${dragActive ? " drop--active" : ""}`}
+            className={`drop${dragActive ? " drop--active" : ""}${isDesktopLayout ? " drop--clickable" : ""}`}
             onDragOver={(e) => {
               e.preventDefault();
               setDragActive(true);
@@ -628,16 +650,24 @@ export function App() {
               const f = e.dataTransfer.files[0];
               if (f) onFile(f);
             }}
-            onClick={() => document.getElementById("file")?.click()}
-            role="button"
-            tabIndex={0}
-            aria-label="Choose receipt image from files"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                document.getElementById("file")?.click();
-              }
-            }}
+            onClick={isDesktopLayout ? () => openReceiptPicker() : undefined}
+            role={isDesktopLayout ? "button" : "region"}
+            tabIndex={isDesktopLayout ? 0 : undefined}
+            aria-label={
+              isDesktopLayout
+                ? "Drop receipt file or click to browse"
+                : "Receipt preview — use Scan with smartphone or Browse files below"
+            }
+            onKeyDown={
+              isDesktopLayout
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openReceiptPicker();
+                    }
+                  }
+                : undefined
+            }
           >
             <input
               id="file"
@@ -645,20 +675,6 @@ export function App() {
               accept="image/*"
               style={{ display: "none" }}
               onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-            />
-            <input
-              ref={fileCameraRef}
-              id="file-camera"
-              type="file"
-              accept="image/*"
-              capture="environment"
-              style={{ display: "none" }}
-              onChange={(e) => {
-                const f = e.target.files?.[0] ?? null;
-                e.target.value = "";
-                if (!f) return;
-                onFile(f, { fromCamera: true });
-              }}
             />
             <UploadIcon />
             {file ? (
@@ -688,26 +704,27 @@ export function App() {
               className="primary capture-actions__camera"
               onClick={(e) => {
                 e.stopPropagation();
-                fileCameraRef.current?.click();
+                setReceiptScannerOpen(true);
               }}
             >
-              Take photo with camera
+              Scan with smartphone
             </button>
             <button
               type="button"
               className="secondary capture-actions__gallery"
               onClick={(e) => {
                 e.stopPropagation();
-                document.getElementById("file")?.click();
+                openReceiptPicker();
               }}
             >
-              Choose from gallery
+              {isDesktopLayout ? "Browse files" : "Gallery / files"}
             </button>
           </div>
           <p className="capture-note">
-            After a <strong>camera</strong> shot, extraction starts automatically once the API is reachable
-            (self-hosted <code className="footer-code">npm run dev</code> or your backend — static Vercel UI
-            alone cannot run QVAC).
+            <strong>Scan</strong> opens your camera with a live preview; one tap sends a full-resolution JPEG to
+            your QVAC API and <strong>starts extraction</strong>. Receipt vs non-receipt is not judged in the
+            browser — QVAC OCR+LLM runs on the server. Static hosts need a reachable <code className="footer-code">/api</code>{" "}
+            (tunnel or deployed backend).
           </p>
 
           <div className="actions">
@@ -972,6 +989,15 @@ export function App() {
       </div>
 
       <div id="rtc-qr-file-anchor" className="qr-anchor" aria-hidden="true" />
+
+      <ReceiptCameraScanner
+        open={receiptScannerOpen}
+        onClose={() => setReceiptScannerOpen(false)}
+        onCapture={(f) => {
+          onFile(f, { fromCamera: true });
+          setReceiptScannerOpen(false);
+        }}
+      />
 
       {scanOpen && (
         <div className="scan-overlay" role="dialog" aria-modal="true" aria-label="Scan merchant QR">
