@@ -16,15 +16,23 @@
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite --config client/vite.config.ts",
     "build": "tsc -p server/tsconfig.json --noEmit && vite build --config client/vite.config.ts",
-    "start": "node --import tsx server/index.ts"
+    "start": "node --import tsx server/index.ts",
+    "diag:receipt-file": "node scripts/check-receipt-file.mjs",
+    "diag:extract": "node scripts/post-extract.mjs",
+    "test:smoke-extract": "node scripts/smoke-extract-receipt.mjs"
   },
   "dependencies": {
+    "@solana/web3.js": "^1.98.4",
     "@qvac/sdk": "^0.9.1",
     "@tetherto/wdk-wallet-solana": "^1.0.0-beta.7",
+    "b4a": "^1.8.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
+    "html5-qrcode": "^2.3.8",
+    "jsonrepair": "^3.14.0",
     "multer": "^1.4.5-lts.1",
+    "sharp": "^0.34.5",
     "tinyld": "1.3.4",
     "zod": "^3.23.8"
   },
@@ -32,7 +40,6 @@
     "esbuild": "0.21.5"
   },
   "devDependencies": {
-    "esbuild": "0.21.5",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/multer": "^1.4.12",
@@ -41,6 +48,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "concurrently": "^8.2.2",
+    "esbuild": "0.21.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tsx": "^4.19.2",

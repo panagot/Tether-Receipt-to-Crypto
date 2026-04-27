@@ -4,24 +4,25 @@
 
 ## For judges (demo checklist)
 
-1. **Environment** — Confirm pills in the header: cluster (e.g. Devnet), Mock vs local AI, wallet ready/off. If **Mock AI** is on, extraction uses **fixed sample data**, not the receipt image — use `USE_MOCK_AI=false` for a real demo (see `.env.example`).
+1. **Environment** — Node **≥ 22.17**, pills in the header: cluster (e.g. Devnet), Local QVAC, wallet ready/off. Extraction runs QVAC on your receipt image (GPU/Vulkan on Windows when available).
 2. **Upload** — Drop or select a JPEG/PNG/WebP receipt → **Run extraction** (or **Ctrl+Enter** / **⌘+Enter** with a file selected).
-3. **Review** — Scrolls to OCR + preview; totals are inferred, not financial advice.
-4. **Fields** — Edit any value; USDT base units update from the fiat total when you change it.
-5. **Settlement** — Paste devnet recipient, set amount, check confirmation, **Send USDT** → copy signature or open **Solana Explorer**.
+3. **Review** — Preview + raw OCR; totals are inferred locally — verify before paying.
+4. **Fields** — Edit any value; USDT base units follow the fiat total when you change it.
+5. **Settlement** — Receipts do not contain a Solana address. Use **Scan Receive QR** (camera or image) or paste a base58 / `solana:…` link. Optional **Use signer wallet** for a devnet self-send smoke test. Confirm checkbox → **Send USDT** → Explorer link.
+6. **Receipt search** — After each extract, the API indexes the receipt text with **QVAC embeddings** (first search may download a small embedding model). Use **Receipt search** for natural-language lookup over past scans (data in `.rtc-data/` on the API host).
 
-**Architecture (honest scope):** Vite UI + Express API on your machine. Receipt bytes hit the **local** API; QVAC runs there (or mock mode without models). Nothing is sent to a cloud LLM for extraction. Static hosts (e.g. Vercel-only static) do not serve `/api`; run `npm run dev` or `npm start` for the full loop.
+**Architecture:** Vite UI + Express API on your machine. Receipt bytes hit the **local** API; QVAC runs **OCR**, **LLM JSON extraction**, and optional **embedding** for search — no cloud inference for those steps. Configure `WALLET_SEED` + `USDT_MINT` for `/api/pay`. Static-only hosts do not serve `/api`; use `npm run dev` or `npm start` for the full loop.
 
 ## Requirements
 
 - Node.js **≥ 22.17**
-- Windows: Vulkan-capable GPU for real QVAC (set `USE_MOCK_AI=true` to skip models)
+- Windows: Vulkan-capable GPU for QVAC (first run may download models)
 
 ## Setup
 
 ```bash
 cp .env.example .env
-# Edit .env: WALLET_SEED, USDT_MINT for devnet pay tests; set USE_MOCK_AI=false for real QVAC
+# Edit .env: WALLET_SEED, USDT_MINT for devnet pay tests
 npm install
 npm run dev
 ```
@@ -35,6 +36,16 @@ npm run dev
 - `npm run dev:server` / `npm run dev:client` — separately  
 - `npm run build` — typecheck server + build client  
 - `npm start` — production API (serve `client/dist` if `NODE_ENV=production` and built)
+
+## API (local)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/health` | Cluster, wallet readiness, **`payerAddress`** (signer pubkey when configured) |
+| POST | `/api/extract` | multipart `receipt` → QVAC OCR + LLM |
+| POST | `/api/pay` | JSON `{ recipient, amountBaseUnits, memo? }` → WDK USDT transfer |
+| POST | `/api/receipts/index` | JSON `{ merchant, total, category, ocrText }` → QVAC embed + save under `.rtc-data/` |
+| POST | `/api/receipts/search` | JSON `{ query, limit? }` → cosine-ranked receipt hits |
 
 ## Vercel
 

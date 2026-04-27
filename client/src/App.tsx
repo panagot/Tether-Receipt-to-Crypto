@@ -1,16 +1,41 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Html5Qrcode } from "html5-qrcode";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ComicHeroIllustration } from "./ComicHeroIllustration";
 import { explorerTxUrl } from "./explorerTx";
+import { isValidSolanaRecipient, parseRecipientFromScanOrPaste } from "./solanaRecipient";
 
 const SETTLEMENT_LS = "rtc:settlement-v1";
+/** RFC MIME + common quirks (e.g. `image/jpg` from some Windows pickers). */
+const ALLOWED_RECEIPT_IMAGE = /^image\/(jpeg|jpg|jpe|pjpeg|png|webp)$/i;
+/** First QVAC run can download large models; keep below typical proxy limits. */
+const EXTRACT_TIMEOUT_MS = 20 * 60 * 1000;
+
+function isAllowedReceiptFile(f: File): boolean {
+  if (ALLOWED_RECEIPT_IMAGE.test(f.type)) return true;
+  const n = f.name.toLowerCase();
+  const extOk = /\.(jpe?g|png|webp)$/.test(n);
+  if (!extOk) return false;
+  if (!f.type || f.type === "application/octet-stream") return true;
+  return false;
+}
 
 type ApiHealth = {
   ok?: boolean;
-  mockAi?: boolean;
   solanaCluster?: string;
   solanaClusterLabel?: string;
   walletReady?: boolean;
+  payerAddress?: string | null;
   node?: string;
+};
+
+type ReceiptSearchHit = {
+  id: string;
+  at: string;
+  merchant: string;
+  total: number;
+  category: string;
+  preview: string;
+  score: number;
 };
 
 type Extraction = {
@@ -72,6 +97,27 @@ export function App() {
   const [healthLoad, setHealthLoad] = useState<"loading" | "ok" | "error">("loading");
   const [navHint, setNavHint] = useState<string | null>(null);
   const [sigCopied, setSigCopied] = useState(false);
+  const [previewLoadError, setPreviewLoadError] = useState<string | null>(null);
+  const [extractSlowHint, setExtractSlowHint] = useState(false);
+  const [indexNote, setIndexNote] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ReceiptSearchHit[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const qrRunnerRef = useRef<Html5Qrcode | null>(null);
+
+  useEffect(() => {
+    if (!loading) {
+      setExtractSlowHint(false);
+      return;
+    }
+    setExtractSlowHint(false);
+    const id = window.setTimeout(() => setExtractSlowHint(true), 10_000);
+    return () => window.clearTimeout(id);
+  }, [loading]);
 
   useEffect(() => {
     setHealthLoad("loading");
@@ -96,6 +142,20 @@ export function App() {
   }, [recipient, memo, amountBase]);
 
   const onFile = useCallback((f: File | null) => {
+    setPreviewLoadError(null);
+    if (f && !isAllowedReceiptFile(f)) {
+      setPreviewUrl((prevUrl) => {
+        if (prevUrl) URL.revokeObjectURL(prevUrl);
+        return null;
+      });
+      setFile(null);
+      setError(
+        f.type === "image/heic" || f.name.toLowerCase().endsWith(".heic")
+          ? "HEIC photos are not supported in the browser preview. Export as JPEG or PNG, then upload."
+          : `Unsupported image type (${f.type || "unknown"}). Use JPEG, PNG, or WebP.`
+      );
+      return;
+    }
     setPreviewUrl((prevUrl) => {
       if (prevUrl) URL.revokeObjectURL(prevUrl);
       return f ? URL.createObjectURL(f) : null;
@@ -129,10 +189,12 @@ export function App() {
     setLoading(true);
     setError(null);
     setPayResult(null);
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => ac.abort(), EXTRACT_TIMEOUT_MS);
     try {
       const fd = new FormData();
       fd.append("receipt", file);
-      const r = await fetch("/api/extract", { method: "POST", body: fd });
+      const r = await fetch("/api/extract", { method: "POST", body: fd, signal: ac.signal });
       const j = (await r.json()) as {
         error?: string;
         ocrText?: string;
@@ -148,12 +210,42 @@ export function App() {
       setMemo(
         `${ext?.merchant ?? "payee"}|${ext?.category ?? "expense"}`.slice(0, 120)
       );
+      setIndexNote(null);
+      void fetch("/api/receipts/index", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          merchant: ext?.merchant ?? "",
+          total: ext?.total ?? 0,
+          category: ext?.category ?? "",
+          ocrText: j.ocrText || "",
+        }),
+      })
+        .then(async (ir) => {
+          if (!ir.ok) {
+            const body = (await ir.json().catch(() => ({}))) as { error?: string };
+            setIndexNote(
+              body.error ||
+                "Could not index this receipt for local search (first run may download an embedding model)."
+            );
+          }
+        })
+        .catch(() => {
+          setIndexNote("Could not reach the API to index this receipt for search.");
+        });
       window.setTimeout(() => {
         document.getElementById("review")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 150);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "extract failed");
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setError(
+          `Extraction timed out after ${EXTRACT_TIMEOUT_MS / 60_000} minutes. The API may still be downloading QVAC models — watch the terminal that runs the server, then try again.`
+        );
+      } else {
+        setError(e instanceof Error ? e.message : "extract failed");
+      }
     } finally {
+      window.clearTimeout(timer);
       setLoading(false);
     }
   }, [file]);
@@ -196,6 +288,121 @@ export function App() {
     }
   };
 
+  const stopQrScanner = useCallback(async () => {
+    const q = qrRunnerRef.current;
+    qrRunnerRef.current = null;
+    if (!q) return;
+    try {
+      await q.stop();
+    } catch {
+      /* not scanning */
+    }
+    try {
+      await q.clear();
+    } catch {
+      /* ignore */
+    }
+    const live = document.getElementById("rtc-qr-reader");
+    if (live) live.innerHTML = "";
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      void stopQrScanner();
+    };
+  }, [stopQrScanner]);
+
+  const openCameraScan = useCallback(async () => {
+    setScanError(null);
+    setScanOpen(true);
+    setScanBusy(true);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    try {
+      await stopQrScanner();
+      const qr = new Html5Qrcode("rtc-qr-reader");
+      qrRunnerRef.current = qr;
+      await qr.start(
+        { facingMode: "environment" },
+        { fps: 8, qrbox: { width: 260, height: 260 } },
+        (decoded) => {
+          const pk = parseRecipientFromScanOrPaste(decoded);
+          if (pk) {
+            setRecipient(pk);
+            void stopQrScanner().then(() => {
+              setScanOpen(false);
+              setScanBusy(false);
+            });
+          }
+        },
+        () => {}
+      );
+      setScanBusy(false);
+    } catch (e) {
+      setScanBusy(false);
+      setScanError(e instanceof Error ? e.message : "Camera QR failed");
+    }
+  }, [stopQrScanner]);
+
+  const closeScanModal = useCallback(async () => {
+    await stopQrScanner();
+    setScanOpen(false);
+    setScanBusy(false);
+    setScanError(null);
+  }, [stopQrScanner]);
+
+  const onQrImagePicked = useCallback(
+    async (list: FileList | null) => {
+      const f = list?.[0];
+      if (!f) return;
+      setScanError(null);
+      setScanBusy(true);
+      try {
+        const qr = new Html5Qrcode("rtc-qr-file-anchor", false);
+        const decoded = await qr.scanFile(f, false);
+        await qr.clear();
+        const pk = parseRecipientFromScanOrPaste(decoded);
+        if (!pk) {
+          setScanError("No Solana address found in that QR image.");
+        } else {
+          setRecipient(pk);
+        }
+      } catch (e) {
+        setScanError(e instanceof Error ? e.message : "QR image decode failed");
+      } finally {
+        setScanBusy(false);
+      }
+    },
+    []
+  );
+
+  const useSignerAsRecipient = useCallback(() => {
+    const a = health?.payerAddress?.trim();
+    if (!a) return;
+    setRecipient(a);
+  }, [health?.payerAddress]);
+
+  const runReceiptSearch = useCallback(async () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearchLoading(true);
+    setSearchError(null);
+    try {
+      const r = await fetch("/api/receipts/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q, limit: 10 }),
+      });
+      const j = (await r.json()) as { error?: string; results?: ReceiptSearchHit[] };
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      setSearchResults(j.results ?? []);
+    } catch (e) {
+      setSearchError(e instanceof Error ? e.message : "search failed");
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [searchQuery]);
+
   const copySignature = useCallback(async (sig: string) => {
     try {
       await navigator.clipboard.writeText(sig);
@@ -206,14 +413,19 @@ export function App() {
     }
   }, []);
 
+  const recipientLooksValid = useMemo(
+    () => isValidSolanaRecipient(recipient.trim()),
+    [recipient]
+  );
+
   const canPay = useMemo(() => {
     return (
       confirmed &&
-      recipient.trim().length >= 32 &&
+      recipientLooksValid &&
       Number.isFinite(Number(amountBase)) &&
       Number(amountBase) > 0
     );
-  }, [confirmed, recipient, amountBase]);
+  }, [confirmed, recipientLooksValid, amountBase]);
 
   const clusterKey = health?.solanaCluster ?? "devnet";
   const clusterLabel = health?.solanaClusterLabel ?? "Devnet";
@@ -252,11 +464,7 @@ export function App() {
             {healthLoad === "ok" && health && (
               <>
                 <span className="pill pill--cluster">{clusterLabel}</span>
-                {health.mockAi ? (
-                  <span className="pill pill--warn">Mock AI</span>
-                ) : (
-                  <span className="pill pill--ok">Local AI</span>
-                )}
+                <span className="pill pill--ok">Local QVAC</span>
                 <span className={`pill${health.walletReady ? " pill--ok" : " pill--muted"}`}>
                   {health.walletReady ? "Wallet ready" : "Wallet off"}
                 </span>
@@ -286,10 +494,7 @@ export function App() {
               href="#review"
               onClick={(e) => {
                 e.preventDefault();
-                goToSection(
-                  "review",
-                  "Add a receipt and run extraction to open Review & OCR."
-                );
+                goToSection("review");
               }}
             >
               Review &amp; OCR
@@ -318,12 +523,21 @@ export function App() {
             >
               Send USDT
             </a>
+            <a
+              href="#receipt-memory"
+              onClick={(e) => {
+                e.preventDefault();
+                goToSection("receipt-memory");
+              }}
+            >
+              Receipt search
+            </a>
           </nav>
           <hr className="sidebar__rule" />
           <p className="sidebar__label">Stack</p>
           <ul className="sidebar__stack">
             <li>
-              <strong>QVAC</strong> — local OCR + small LLM
+              <strong>QVAC</strong> — local OCR + small LLM + embeddings search
             </li>
             <li>
               <strong>WDK</strong> — optional Solana USDT send
@@ -377,9 +591,11 @@ export function App() {
                 <h1 id="workflow-title">Scan receipts, extract locally, pay USDT when you are ready</h1>
                 <p className="sub">
                   <strong>QVAC</strong> runs OCR and a small LLM on <strong>your machine</strong> (via this
-                  app’s API) — receipt bytes are not sent to a cloud LLM for extraction. Edit every field,
-                  then optionally send <strong>USDT</strong> on Solana with <strong>Tether WDK</strong> after
-                  you confirm recipient and amount.
+                  app’s API) — receipt bytes are not sent to a cloud LLM for extraction. After each
+                  extraction we also embed the receipt text locally for <strong>semantic search</strong> over
+                  past scans. Edit every field, then send <strong>USDT</strong> on Solana with{" "}
+                  <strong>Tether WDK</strong> once you have the payee&apos;s Solana address (paste or scan their
+                  wallet &quot;Receive&quot; QR).
                 </p>
               </div>
             </div>
@@ -449,36 +665,61 @@ export function App() {
               Clear receipt
             </button>
           </div>
-          {healthLoad === "ok" && health?.mockAi && (
-            <div className="mock-ai-note" role="note">
-              <strong>Mock AI is on.</strong> The API returns fixed sample OCR and totals (for example{" "}
-              <strong>47.89 USD</strong>) — it does <strong>not</strong> read your receipt image. To extract
-              real totals from your scan, set{" "}
-              <code className="mock-ai-note__code">USE_MOCK_AI=false</code> in <code className="mock-ai-note__code">.env</code>, restart{" "}
-              <code className="mock-ai-note__code">npm run dev</code>, and run extraction again (QVAC needs
-              models + a capable GPU on Windows).
+          {loading && (
+            <div className="extract-wait-stack" role="status">
+              <p className="extract-wait">
+                Running local QVAC on your image. After models are cached on disk, this is usually a few
+                seconds to about a minute — not “instant,” because OCR and a small LLM still run on your CPU
+                / GPU.
+              </p>
+              {extractSlowHint && (
+                <p className="extract-wait extract-wait--secondary">
+                  Still working — the <strong>first</strong> extraction on a machine can download large
+                  models (sometimes several minutes). Watch the API terminal for{" "}
+                  <code className="extract-wait__code">[extract]</code> and{" "}
+                  <code className="extract-wait__code">[QVAC …]</code> lines.
+                </p>
+              )}
             </div>
           )}
           {error && <div className="err">{error}</div>}
         </section>
 
-        {previewUrl && (
-          <section id="review" className="card" aria-labelledby="review-title">
-            <h2 id="review-title" className="panel-title">
-              Review
-            </h2>
+        <section id="review" className="card" aria-labelledby="review-title">
+          <h2 id="review-title" className="panel-title">
+            Review
+          </h2>
+          {!file && (
+            <p className="review-empty" role="status">
+              No receipt selected yet. Upload a <strong>JPEG, PNG, or WebP</strong> image in{" "}
+              <strong>Upload &amp; extract</strong> above, then click <strong>Run extraction</strong>. This
+              panel shows the preview and raw OCR after you pick a file.
+            </p>
+          )}
+          {file && previewUrl && (
             <div className="grid">
               <div className="field">
                 <label>Receipt preview</label>
-                <img className="preview" src={previewUrl} alt="Uploaded receipt" />
+                <img
+                  className="preview"
+                  src={previewUrl}
+                  alt="Uploaded receipt"
+                  onLoad={() => setPreviewLoadError(null)}
+                  onError={() =>
+                    setPreviewLoadError(
+                      "This image could not be shown in the browser. Try re-exporting as JPEG or PNG."
+                    )
+                  }
+                />
+                {previewLoadError && <p className="err review-preview-err">{previewLoadError}</p>}
               </div>
               <div className="field">
                 <label>Raw OCR</label>
                 <textarea readOnly value={ocrText} placeholder="Run extraction to populate…" />
               </div>
             </div>
-          </section>
-        )}
+          )}
+        </section>
 
         {extraction && (
           <section id="fields" className="card" aria-labelledby="fields-title">
@@ -493,7 +734,11 @@ export function App() {
                 <label>Merchant</label>
                 <input
                   value={extraction.merchant}
-                  onChange={(e) => setExtraction({ ...extraction, merchant: e.target.value })}
+                  onChange={(e) => {
+                    const merchant = e.target.value;
+                    setExtraction({ ...extraction, merchant });
+                    setMemo(`${merchant}|${extraction.category}`.slice(0, 120));
+                  }}
                 />
               </div>
               <div className="field">
@@ -513,7 +758,11 @@ export function App() {
                 <label>Category</label>
                 <input
                   value={extraction.category}
-                  onChange={(e) => setExtraction({ ...extraction, category: e.target.value })}
+                  onChange={(e) => {
+                    const category = e.target.value;
+                    setExtraction({ ...extraction, category });
+                    setMemo(`${extraction.merchant}|${category}`.slice(0, 120));
+                  }}
                 />
               </div>
               <div className="field">
@@ -529,15 +778,44 @@ export function App() {
             <h2 id="settlement-title" className="panel-title">
               Settlement ({clusterLabel})
             </h2>
+            <p className="settlement-lead">
+              Paper receipts almost never include a Solana address. For a real <strong>USDT</strong> transfer,
+              the payee must share a pubkey (e.g. Phantom <strong>Receive</strong> QR). Amount and memo here
+              come from QVAC; you choose the destination.
+            </p>
+            <div className="settlement-actions" role="group" aria-label="Recipient helpers">
+              <button type="button" className="secondary" disabled={scanBusy} onClick={() => void openCameraScan()}>
+                Scan Receive QR (camera)
+              </button>
+              <label className={`btn-file${scanBusy ? " btn-file--disabled" : ""}`}>
+                <span>Scan QR from image</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={scanBusy}
+                  onChange={(e) => void onQrImagePicked(e.target.files)}
+                />
+              </label>
+              {health?.payerAddress && (
+                <button type="button" className="secondary" onClick={useSignerAsRecipient}>
+                  Use signer wallet (test / self-send)
+                </button>
+              )}
+            </div>
+            {scanError && <p className="err settlement-inline-err">{scanError}</p>}
             <div className="grid">
               <div className="field">
-                <label>Recipient address</label>
+                <label>Recipient address (Solana)</label>
                 <input
                   value={recipient}
                   onChange={(e) => setRecipient(e.target.value)}
-                  placeholder="Solana address"
+                  placeholder="Base58 address or paste solana:… link"
                   spellCheck={false}
+                  aria-invalid={recipient.trim().length > 0 && !recipientLooksValid}
                 />
+                {recipient.trim().length > 0 && !recipientLooksValid && (
+                  <p className="field-hint field-hint--warn">Not a valid Solana public key.</p>
+                )}
               </div>
               <div className="field">
                 <label>Amount (base units)</label>
@@ -590,9 +868,69 @@ export function App() {
           </section>
         )}
 
+        <section id="receipt-memory" className="card" aria-labelledby="memory-title">
+          <h2 id="memory-title" className="panel-title">
+            Receipt search (QVAC embeddings)
+          </h2>
+          <p className="settlement-lead">
+            Each successful extraction is embedded on-device and stored under{" "}
+            <code className="footer-code">.rtc-data/</code> on the machine running the API. Ask natural-language
+            questions over merchants, totals, or items you have scanned before.
+          </p>
+          {indexNote && <p className="err settlement-inline-err">{indexNote}</p>}
+          <div className="memory-search-row">
+            <input
+              className="memory-search-input"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder='e.g. "coffee shop over 40 dollars"'
+              aria-label="Search past receipts"
+            />
+            <button type="button" className="secondary" disabled={searchLoading} onClick={() => void runReceiptSearch()}>
+              {searchLoading ? "Searching…" : "Search"}
+            </button>
+          </div>
+          {searchError && <p className="err">{searchError}</p>}
+          {searchResults.length > 0 && (
+            <ul className="memory-results">
+              {searchResults.map((h) => (
+                <li key={h.id} className="memory-hit">
+                  <div className="memory-hit__meta">
+                    <strong>{h.merchant}</strong>
+                    <span className="memory-hit__score">score {(h.score * 100).toFixed(1)}%</span>
+                  </div>
+                  <div className="memory-hit__sub">
+                    {h.category} · total {h.total} · {new Date(h.at).toLocaleString()}
+                  </div>
+                  <p className="memory-hit__preview">{h.preview}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
           </div>
         </main>
       </div>
+
+      <div id="rtc-qr-file-anchor" className="qr-anchor" aria-hidden="true" />
+
+      {scanOpen && (
+        <div className="scan-overlay" role="dialog" aria-modal="true" aria-label="Scan merchant QR">
+          <div className="scan-modal">
+            <div className="scan-modal__head">
+              <h3>Scan merchant Receive QR</h3>
+              <button type="button" className="scan-modal__close" onClick={() => void closeScanModal()}>
+                Close
+              </button>
+            </div>
+            <p className="scan-modal__hint">Point the camera at their wallet&apos;s Receive QR (Phantom, Backpack, …).</p>
+            <div id="rtc-qr-reader" className="qr-reader" />
+            {scanBusy && <p className="scan-modal__status">Starting camera…</p>}
+            {scanError && <p className="err">{scanError}</p>}
+          </div>
+        </div>
+      )}
 
       <footer className="site-footer">
         <div className="site-footer__inner">
@@ -622,7 +960,7 @@ export function App() {
           </div>
           <div className="site-footer__legal">
             <p>
-              Models run locally via QVAC when mock mode is off. Never commit real seeds, mnemonics, or
+              QVAC runs OCR and extraction locally on your machine. Never commit real seeds, mnemonics, or
               mainnet keys to source control.
             </p>
             <p className="site-footer__copy">© {new Date().getFullYear()} Receipt to Crypto · Frontier demo</p>

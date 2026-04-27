@@ -4,3 +4,4 @@ dist-server
 .env
 *.log
 .DS_Store
+.rtc-data
