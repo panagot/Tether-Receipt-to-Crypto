@@ -8,6 +8,7 @@ import { ReceiptCameraScanner } from "./ReceiptCameraScanner";
 import { isValidSolanaRecipient, parseRecipientFromScanOrPaste } from "./solanaRecipient";
 
 const SETTLEMENT_LS = "rtc:settlement-v1";
+const AUTO_EXTRACT_LS = "rtc:auto-extract-v1";
 /** RFC MIME + common quirks (e.g. `image/jpg` from some Windows pickers). */
 const ALLOWED_RECEIPT_IMAGE = /^image\/(jpeg|jpg|jpe|pjpeg|png|webp)$/i;
 /** First QVAC run can download large models; keep below typical proxy limits. */
@@ -45,10 +46,71 @@ type Extraction = {
   merchant: string;
   total: number;
   currency: string;
+  date?: string;
+  lineItems?: Array<{
+    description: string;
+    quantity?: number;
+    unitPrice?: number;
+    total?: number;
+  }>;
   category: string;
-  confidence?: number;
+  confidence: number;
   notes?: string;
 };
+
+/** Matches `/api/extract` `settlementFx` when the receipt currency needed FX for the USDT hint. */
+type SettlementFx = {
+  from: string;
+  to: string;
+  rate: number;
+  source: "env" | "frankfurter" | "fallback" | "unmapped";
+  asOf?: string;
+};
+
+type ExtractDebugPayload = {
+  timings: { prepareMs: number; ocrMs: number; extractMs: number };
+  ocrCharCount: number;
+  ocrLangsUsed: string[];
+  ocrSignalScore?: number;
+  ocrRetryCount?: number;
+};
+
+type PosExtraction = {
+  ocrText: string;
+  amount: number;
+  currency: string;
+  confidence: number;
+  extractDebug?: unknown;
+};
+
+function normalizeReceiptCurrency(currency: string): string {
+  const c = currency.trim().toUpperCase().replace(/\s+/g, "");
+  if (c === "EURO") return "EUR";
+  return c;
+}
+
+function usdtBaseUnitsFromTotal(total: number, currency: string, fx: SettlementFx | null): number {
+  if (!Number.isFinite(total) || total < 0) return 0;
+  const c = normalizeReceiptCurrency(currency);
+  if (c === "USD" || c === "USDT") return Math.round(total * 1e6);
+  if (
+    fx &&
+    fx.from === c &&
+    fx.to === "USD" &&
+    Number.isFinite(fx.rate) &&
+    fx.rate > 0
+  ) {
+    return Math.round(total * fx.rate * 1e6);
+  }
+  return Math.round(total * 1e6);
+}
+
+function formatUsdFromMicroUsdt(baseUnits: number | null): string | null {
+  if (baseUnits == null || !Number.isFinite(baseUnits)) return null;
+  const n = baseUnits / 1e6;
+  if (!Number.isFinite(n)) return null;
+  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+}
 
 function UploadIcon() {
   return (
@@ -86,6 +148,9 @@ export function App() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [ocrText, setOcrText] = useState("");
   const [extraction, setExtraction] = useState<Extraction | null>(null);
+  const [settlementFx, setSettlementFx] = useState<SettlementFx | null>(null);
+  const [suggestedUsdtUsd, setSuggestedUsdtUsd] = useState<number | null>(null);
+  const [extractDebug, setExtractDebug] = useState<ExtractDebugPayload | null>(null);
   const [suggestedBase, setSuggestedBase] = useState<number | null>(null);
   const [recipient, setRecipient] = useState(() => readSettlementDraft()?.recipient ?? "");
   const [amountBase, setAmountBase] = useState(() => readSettlementDraft()?.amountBase ?? "");
@@ -106,6 +171,19 @@ export function App() {
   /** After taking a photo with the device camera, run extraction once the file is in state. */
   const [autoExtractAfterCamera, setAutoExtractAfterCamera] = useState(false);
   const [receiptScannerOpen, setReceiptScannerOpen] = useState(false);
+  const [posScannerOpen, setPosScannerOpen] = useState(false);
+  const [posFile, setPosFile] = useState<File | null>(null);
+  const [posPreviewUrl, setPosPreviewUrl] = useState<string | null>(null);
+  const [posLoading, setPosLoading] = useState(false);
+  const [posExtraction, setPosExtraction] = useState<PosExtraction | null>(null);
+  const [posError, setPosError] = useState<string | null>(null);
+  const [autoExtractOnUpload, setAutoExtractOnUpload] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(AUTO_EXTRACT_LS) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [isDesktopLayout, setIsDesktopLayout] = useState(
     () => (typeof window !== "undefined" ? window.matchMedia("(min-width: 721px)").matches : true)
   );
@@ -164,6 +242,14 @@ export function App() {
     }
   }, [recipient, memo, amountBase]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(AUTO_EXTRACT_LS, autoExtractOnUpload ? "1" : "0");
+    } catch {
+      /* ignore quota */
+    }
+  }, [autoExtractOnUpload]);
+
   const onFile = useCallback((f: File | null, opts?: { fromCamera?: boolean }) => {
     setPreviewLoadError(null);
     setAutoExtractAfterCamera(false);
@@ -186,19 +272,32 @@ export function App() {
     });
     setFile(f);
     setExtraction(null);
+    setSettlementFx(null);
+    setSuggestedUsdtUsd(null);
+    setExtractDebug(null);
     setOcrText("");
     setSuggestedBase(null);
     setPayResult(null);
     setError(null);
-    if (f && opts?.fromCamera) {
+    if (f && (opts?.fromCamera || autoExtractOnUpload)) {
       setAutoExtractAfterCamera(true);
     }
-  }, []);
+  }, [autoExtractOnUpload]);
 
   const clearReceipt = useCallback(() => {
     onFile(null);
     setConfirmed(false);
   }, [onFile]);
+
+  const onPosFile = useCallback((f: File | null) => {
+    setPosPreviewUrl((prevUrl) => {
+      if (prevUrl) URL.revokeObjectURL(prevUrl);
+      return f ? URL.createObjectURL(f) : null;
+    });
+    setPosFile(f);
+    setPosExtraction(null);
+    setPosError(null);
+  }, []);
 
   const openReceiptPicker = useCallback(() => {
     document.getElementById("file")?.click();
@@ -231,10 +330,16 @@ export function App() {
         ocrText?: string;
         extraction?: Extraction;
         suggestedAmountBaseUnits?: number;
+        suggestedUsdtUsd?: number;
+        settlementFx?: SettlementFx | null;
+        extractDebug?: ExtractDebugPayload;
       }>(r);
       if (!r.ok) throw new Error(j.error || r.statusText);
       setOcrText(j.ocrText || "");
       setExtraction(j.extraction ?? null);
+      setSettlementFx(j.settlementFx ?? null);
+      setSuggestedUsdtUsd(typeof j.suggestedUsdtUsd === "number" ? j.suggestedUsdtUsd : null);
+      setExtractDebug(j.extractDebug ?? null);
       setSuggestedBase(j.suggestedAmountBaseUnits ?? null);
       setAmountBase(String(j.suggestedAmountBaseUnits ?? ""));
       const ext = j.extraction;
@@ -284,6 +389,58 @@ export function App() {
       setLoading(false);
     }
   }, [file]);
+
+  const extractPos = useCallback(async () => {
+    if (!posFile) return;
+    setPosLoading(true);
+    setPosError(null);
+    try {
+      const fd = new FormData();
+      fd.append("pos", posFile);
+      const r = await fetch(apiUrl("/api/extract-pos"), { method: "POST", body: fd });
+      const j = await parseJsonOrThrow<{
+        error?: string;
+        ocrText?: string;
+        amount?: number;
+        currency?: string;
+        confidence?: number;
+        extractDebug?: unknown;
+      }>(r);
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      setPosExtraction({
+        ocrText: j.ocrText ?? "",
+        amount: Number(j.amount ?? 0),
+        currency: normalizeReceiptCurrency(j.currency ?? "USD"),
+        confidence: Number(j.confidence ?? 0),
+        extractDebug: j.extractDebug,
+      });
+    } catch (e) {
+      setPosError(e instanceof Error ? e.message : "POS extraction failed");
+    } finally {
+      setPosLoading(false);
+    }
+  }, [posFile]);
+
+  const applyPosToSettlement = useCallback(() => {
+    if (!posExtraction) return;
+    const currency = normalizeReceiptCurrency(posExtraction.currency || "USD");
+    const amount = Number.isFinite(posExtraction.amount) ? posExtraction.amount : 0;
+    const nextBase = Math.max(0, Math.round(amount * 1e6));
+    setAmountBase(String(nextBase));
+    setSuggestedBase(nextBase);
+    setSuggestedUsdtUsd(currency === "USD" || currency === "USDT" ? nextBase / 1e6 : null);
+    setSettlementFx(null);
+    if (extraction) {
+      setExtraction({
+        ...extraction,
+        total: amount,
+        currency,
+      });
+    }
+    if (!memo.trim()) {
+      setMemo(`pos|${currency}`.slice(0, 120));
+    }
+  }, [posExtraction, extraction, memo]);
 
   useEffect(() => {
     if (!autoExtractAfterCamera || !file || loading) return;
@@ -443,6 +600,28 @@ export function App() {
       setSearchLoading(false);
     }
   }, [searchQuery]);
+
+  const extractionConfidence = extraction?.confidence;
+  const extractionConfidenceLabel =
+    extractionConfidence == null || !Number.isFinite(extractionConfidence)
+      ? null
+      : `${Math.round(Math.max(0, Math.min(1, extractionConfidence)) * 100)}%`;
+  const lowConfidence = extractionConfidence != null && Number.isFinite(extractionConfidence) && extractionConfidence < 0.65;
+  const receiptPosMismatch =
+    extraction &&
+    posExtraction &&
+    Number.isFinite(extraction.total) &&
+    Number.isFinite(posExtraction.amount) &&
+    extraction.total > 0 &&
+    posExtraction.amount > 0
+      ? Math.abs(extraction.total - posExtraction.amount)
+      : null;
+  const hasMaterialPosMismatch =
+    receiptPosMismatch != null &&
+    receiptPosMismatch >= 1 &&
+    extraction != null &&
+    posExtraction != null &&
+    receiptPosMismatch / Math.max(extraction.total, posExtraction.amount) >= 0.02;
 
   const copySignature = useCallback(async (sig: string) => {
     try {
@@ -650,13 +829,18 @@ export function App() {
             <div className="section-head">
               <div>
                 <h1 id="workflow-title">Scan receipts, extract locally, pay USDT when you are ready</h1>
-                <p className="sub">
+                <p className="sub sub--desktop-only">
                   <strong>QVAC</strong> runs OCR and a small LLM on <strong>your machine</strong> (via this
                   app’s API) — receipt bytes are not sent to a cloud LLM for extraction. After each
                   extraction we also embed the receipt text locally for <strong>semantic search</strong> over
                   past scans. Edit every field, then send <strong>USDT</strong> on Solana with{" "}
                   <strong>Tether WDK</strong> once you have the payee&apos;s Solana address (paste or scan their
                   wallet &quot;Receive&quot; QR).
+                </p>
+                <p className="sub sub--mobile-only">
+                  <strong>Photo</strong> → local <strong>QVAC</strong> extract → verify fields → optional{" "}
+                  <strong>USDT</strong> with WDK. Use <strong>Scan with smartphone</strong> for the best
+                  camera flow.
                 </p>
               </div>
             </div>
@@ -746,7 +930,73 @@ export function App() {
               {isDesktopLayout ? "Browse files" : "Gallery / files"}
             </button>
           </div>
-          <p className="capture-note">
+          <div className="pos-capture">
+            <input
+              id="pos-file"
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => onPosFile(e.target.files?.[0] ?? null)}
+            />
+            <div className="pos-capture__head">
+              <strong>POS scanner</strong>
+              <span>Capture the terminal screen amount and prefill USDT settlement.</span>
+            </div>
+            <div className="capture-actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setPosScannerOpen(true)}
+              >
+                Scan POS screen
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => document.getElementById("pos-file")?.click()}
+              >
+                Upload POS image
+              </button>
+              <button
+                type="button"
+                className={posFile ? "primary" : "secondary"}
+                disabled={!posFile || posLoading}
+                onClick={extractPos}
+              >
+                {posLoading ? "Reading POS…" : "Extract POS"}
+              </button>
+            </div>
+            {posFile && (
+              <p className="pos-capture__meta">
+                POS image: <strong>{posFile.name}</strong>
+              </p>
+            )}
+            {posPreviewUrl && (
+              <img className="pos-preview" src={posPreviewUrl} alt="POS screen preview" />
+            )}
+            {posError && <p className="err">{posError}</p>}
+            {posExtraction && (
+              <div className="pos-result">
+                <p>
+                  Parsed POS total: <strong>{posExtraction.amount.toFixed(2)} {posExtraction.currency}</strong>{" "}
+                  · confidence {Math.round(Math.max(0, Math.min(1, posExtraction.confidence)) * 100)}%
+                </p>
+                <textarea readOnly value={posExtraction.ocrText} placeholder="POS OCR output" />
+                <button type="button" className="primary" onClick={applyPosToSettlement}>
+                  Apply POS total to settlement
+                </button>
+              </div>
+            )}
+          </div>
+          <label className="check-row" style={{ margin: "0.6rem 0 0.15rem" }}>
+            <input
+              type="checkbox"
+              checked={autoExtractOnUpload}
+              onChange={(e) => setAutoExtractOnUpload(e.target.checked)}
+            />
+            <span>Auto-run extraction right after selecting or scanning a receipt.</span>
+          </label>
+          <p className="capture-note u-hide-narrow-mobile">
             <strong>Scan</strong> opens your camera with a live preview; one tap sends a full-resolution JPEG to
             your QVAC API and <strong>starts extraction</strong>. Receipt vs non-receipt is not judged in the
             browser — QVAC OCR+LLM runs on the server. Static hosts need a reachable <code className="footer-code">/api</code>{" "}
@@ -754,7 +1004,12 @@ export function App() {
           </p>
 
           <div className="actions">
-            <button className="secondary" type="button" disabled={!file || loading} onClick={extract}>
+            <button
+              className={file ? "primary" : "secondary"}
+              type="button"
+              disabled={!file || loading}
+              onClick={extract}
+            >
               {loading ? "Extracting…" : "Run extraction"}
             </button>
             <button
@@ -830,6 +1085,82 @@ export function App() {
             <p style={{ margin: "-0.5rem 0 1rem", fontSize: "0.875rem", color: "var(--ink-muted)" }}>
               Edit anything before settlement — nothing sends until you sign below.
             </p>
+            <div className="extraction-summary" aria-live="polite">
+              <div className="extraction-summary__row">
+                <span className="extraction-summary__label">Quick read</span>
+                {extractionConfidenceLabel && (
+                  <span className="extraction-summary__label">Model confidence {extractionConfidenceLabel}</span>
+                )}
+              </div>
+              <p className="extraction-summary__merchant">{extraction.merchant || "—"}</p>
+              <div className="extraction-summary__amounts">
+                <span>
+                  <span className="extraction-summary__label">Total</span>{" "}
+                  <strong>
+                    {Number.isFinite(extraction.total) ? extraction.total.toFixed(2) : "—"}{" "}
+                    {normalizeReceiptCurrency(extraction.currency)}
+                  </strong>
+                </span>
+                {(suggestedUsdtUsd != null || formatUsdFromMicroUsdt(suggestedBase)) && (
+                  <span>
+                    <span className="extraction-summary__label">USDT hint (USD notional)</span>{" "}
+                    <strong>
+                      {suggestedUsdtUsd != null
+                        ? suggestedUsdtUsd.toLocaleString(undefined, {
+                            style: "currency",
+                            currency: "USD",
+                            maximumFractionDigits: 2,
+                          })
+                        : formatUsdFromMicroUsdt(suggestedBase)}
+                    </strong>
+                  </span>
+                )}
+              </div>
+              <p className="extraction-summary__hint">
+                The USDT hint uses FX from the moment you ran <strong>Run extraction</strong>. If you change
+                currency or total, tap extract again for an updated rate.
+                {settlementFx?.source === "unmapped" && (
+                  <>
+                    {" "}
+                    <span style={{ color: "var(--danger)" }}>
+                      Rate for {settlementFx.from} was not available—hint assumes 1:1 vs USD; set{" "}
+                      <code className="footer-code">{settlementFx.from}_USD_RATE</code> on the API if needed.
+                    </span>
+                  </>
+                )}
+              </p>
+              {lowConfidence && (
+                <p className="field-hint field-hint--warn" style={{ marginTop: "0.35rem" }}>
+                  Low-confidence extraction. Verify and edit every field before any on-chain action.
+                </p>
+              )}
+              {hasMaterialPosMismatch && (
+                <p className="field-hint field-hint--warn" style={{ marginTop: "0.35rem" }}>
+                  Receipt total and POS total differ ({extraction.total.toFixed(2)} vs{" "}
+                  {posExtraction.amount.toFixed(2)}). Double-check before sending USDT.
+                </p>
+              )}
+            </div>
+            {extractDebug && (
+              <details className="extract-debug" style={{ marginBottom: "1rem" }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.875rem", fontWeight: 600 }}>
+                  Extraction diagnostics (debug mode)
+                </summary>
+                <pre
+                  style={{
+                    margin: "0.5rem 0 0",
+                    padding: "0.65rem 0.75rem",
+                    fontSize: "0.75rem",
+                    overflow: "auto",
+                    background: "var(--surface-2)",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--line)",
+                  }}
+                >
+                  {JSON.stringify(extractDebug, null, 2)}
+                </pre>
+              </details>
+            )}
             <div className="grid">
               <div className="field">
                 <label>Merchant</label>
@@ -840,6 +1171,32 @@ export function App() {
                     setExtraction({ ...extraction, merchant });
                     setMemo(`${merchant}|${extraction.category}`.slice(0, 120));
                   }}
+                  autoComplete="organization"
+                />
+              </div>
+              <div className="field">
+                <label>Currency (ISO 4217)</label>
+                <input
+                  value={extraction.currency}
+                  onChange={(e) => {
+                    const currency = normalizeReceiptCurrency(e.target.value).slice(0, 4);
+                    const fxActive =
+                      settlementFx && currency === settlementFx.from ? settlementFx : null;
+                    if (settlementFx && !fxActive) setSettlementFx(null);
+                    const total = extraction.total;
+                    const b = usdtBaseUnitsFromTotal(total, currency, fxActive);
+                    setExtraction({ ...extraction, currency });
+                    setSuggestedBase(b);
+                    setSuggestedUsdtUsd(
+                      fxActive && normalizeReceiptCurrency(currency) === fxActive.from ? b / 1e6 : null
+                    );
+                    setAmountBase(String(b));
+                  }}
+                  spellCheck={false}
+                  maxLength={4}
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  aria-label="Receipt currency code"
                 />
               </div>
               <div className="field">
@@ -847,11 +1204,20 @@ export function App() {
                 <input
                   type="number"
                   step="0.01"
+                  inputMode="decimal"
                   value={extraction.total}
                   onChange={(e) => {
                     const total = Number(e.target.value);
                     setExtraction({ ...extraction, total });
-                    setAmountBase(String(Math.round(total * 1e6)));
+                    const b = usdtBaseUnitsFromTotal(total, extraction.currency, settlementFx);
+                    setSuggestedBase(b);
+                    setSuggestedUsdtUsd(
+                      settlementFx &&
+                        normalizeReceiptCurrency(extraction.currency) === settlementFx.from
+                        ? b / 1e6
+                        : null
+                    );
+                    setAmountBase(String(b));
                   }}
                 />
               </div>
@@ -867,8 +1233,58 @@ export function App() {
                 />
               </div>
               <div className="field">
-                <label>USDT amount (base units, 6 dp)</label>
+                <label>Date (YYYY-MM-DD)</label>
+                <input
+                  value={extraction.date ?? ""}
+                  onChange={(e) => setExtraction({ ...extraction, date: e.target.value })}
+                  placeholder="2026-04-28"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="field field--grid-full">
+                <label>Line items (optional, from OCR)</label>
+                <textarea
+                  readOnly
+                  value={
+                    extraction.lineItems && extraction.lineItems.length > 0
+                      ? extraction.lineItems
+                          .map((li) => {
+                            const qty = li.quantity != null ? ` x${li.quantity}` : "";
+                            const unit = li.unitPrice != null ? ` @ ${li.unitPrice}` : "";
+                            const tot = li.total != null ? ` = ${li.total}` : "";
+                            return `${li.description}${qty}${unit}${tot}`;
+                          })
+                          .join("\n")
+                      : ""
+                  }
+                  placeholder="No line items extracted."
+                />
+              </div>
+              <div className="field field--grid-full">
+                <label>Suggested USDT (base units, 6 dp)</label>
                 <input readOnly value={suggestedBase ?? ""} />
+                {settlementFx && normalizeReceiptCurrency(extraction.currency) === settlementFx.from && (
+                    <p
+                      style={{
+                        margin: "0.35rem 0 0",
+                        fontSize: "0.8125rem",
+                        color: "var(--ink-muted)",
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      Uses indicative {settlementFx.from}/{settlementFx.to}{" "}
+                      <strong>
+                        {settlementFx.rate >= 1
+                          ? settlementFx.rate.toFixed(4)
+                          : settlementFx.rate.toFixed(6)}
+                      </strong>{" "}
+                      ({settlementFx.source}
+                      {settlementFx.source === "frankfurter" && settlementFx.asOf
+                        ? `, as of ${settlementFx.asOf}`
+                        : ""}
+                      ) so USDT tracks USD; not a live trading quote.
+                    </p>
+                  )}
               </div>
             </div>
           </section>
@@ -920,7 +1336,12 @@ export function App() {
               </div>
               <div className="field">
                 <label>Amount (base units)</label>
-                <input value={amountBase} onChange={(e) => setAmountBase(e.target.value)} />
+                <input
+                  value={amountBase}
+                  onChange={(e) => setAmountBase(e.target.value)}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                />
               </div>
               <div className="field" style={{ gridColumn: "1 / -1" }}>
                 <label>Memo (optional)</label>
@@ -984,6 +1405,12 @@ export function App() {
               className="memory-search-input"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void runReceiptSearch();
+                }
+              }}
               placeholder='e.g. "coffee shop over 40 dollars"'
               aria-label="Search past receipts"
             />
@@ -1022,6 +1449,14 @@ export function App() {
         onCapture={(f) => {
           onFile(f, { fromCamera: true });
           setReceiptScannerOpen(false);
+        }}
+      />
+      <ReceiptCameraScanner
+        open={posScannerOpen}
+        onClose={() => setPosScannerOpen(false)}
+        onCapture={(f) => {
+          onPosFile(f);
+          setPosScannerOpen(false);
         }}
       />
 

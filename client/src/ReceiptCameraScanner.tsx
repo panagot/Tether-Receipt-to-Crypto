@@ -127,8 +127,8 @@ export function ReceiptCameraScanner({ open, onClose, onCapture }: Props) {
           </button>
         </div>
         <p className="scan-modal__hint">
-          Fill the frame with the receipt, hold steady, then tap <strong>Capture & extract</strong>. The image
-          is sent to your QVAC API for OCR; the browser only captures the photo.
+          Fill the frame, avoid glare, then tap <strong>Capture &amp; extract</strong>. Still on your network —
+          the photo goes to your QVAC API for OCR.
         </p>
         <div className="receipt-scanner__video-wrap">
           <video

@@ -4,11 +4,13 @@ import express from "express";
 import multer from "multer";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { suggestedUsdtBaseUnits } from "./fxSettlement.js";
 import { extractReceiptWithQvac, shutdownQvac } from "./qvacService.js";
 import { indexReceiptForSearch, searchIndexedReceipts, shutdownReceiptSearch } from "./receiptSearchService.js";
 import { PayBodySchema, ReceiptIndexBodySchema, ReceiptSearchBodySchema } from "./schema.js";
 import { getWalletSignerAddress, sendUsdt } from "./wdkPay.js";
 import { displayClusterName, inferSolanaCluster } from "./solanaMeta.js";
+import { extractPosFromImage } from "./posExtract.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, "..");
@@ -61,19 +63,64 @@ app.post("/api/extract", upload.single("receipt"), async (req, res) => {
     }
     const bytes = req.file.buffer.length;
     console.log("[extract] POST receipt", bytes, "bytes", req.file.mimetype || "");
-    const { ocrText, extraction } = await extractReceiptWithQvac(req.file.buffer);
-    const amountBaseUnits = Math.round(extraction.total * 1e6);
+    const extractDebug =
+      process.env.RTC_EXTRACT_DEBUG === "true" || process.env.RTC_EXTRACT_DEBUG === "1";
+    const { ocrText, extraction, timings, ocrLangsUsed, ocrSignalScore, ocrRetryCount } =
+      await extractReceiptWithQvac(req.file.buffer);
+    const { baseUnits: amountBaseUnits, settlementFx } = await suggestedUsdtBaseUnits(
+      extraction.total,
+      extraction.currency
+    );
+    const suggestedUsdtUsd = Math.round(amountBaseUnits) / 1e6;
     res.json({
       ocrText,
       extraction,
       suggestedAmountBaseUnits: amountBaseUnits,
+      suggestedUsdtUsd,
+      settlementFx,
       disclaimer:
-        "Totals are inferred locally; verify before sending funds. Not financial or tax advice.",
+        "Totals are inferred locally. Non-USD receipts use indicative FX→USD rates for USDT hints (not live trading quotes). Verify before sending funds. Not financial or tax advice.",
+      ...(extractDebug
+        ? {
+            extractDebug: {
+              timings,
+              ocrCharCount: ocrText.length,
+              ocrLangsUsed,
+              ocrSignalScore,
+              ocrRetryCount,
+            },
+          }
+        : {}),
     });
   } catch (e) {
     console.error(e);
     const message = e instanceof Error ? e.message : "extract failed";
     res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/extract-pos", upload.single("pos"), async (req, res) => {
+  try {
+    if (!req.file?.buffer) {
+      res.status(400).json({ error: "Missing multipart field `pos` (JPEG/PNG/WebP)." });
+      return;
+    }
+    const debug =
+      process.env.RTC_EXTRACT_DEBUG === "true" || process.env.RTC_EXTRACT_DEBUG === "1";
+    const out = await extractPosFromImage(req.file.buffer, { includeDebug: debug });
+    res.json({
+      ocrText: out.ocrText,
+      amount: out.amount,
+      currency: out.currency,
+      confidence: out.confidence,
+      ...(debug && out.debug ? { extractDebug: out.debug } : {}),
+    });
+  } catch (e) {
+    console.error(e);
+    const message = e instanceof Error ? e.message : "POS extraction failed";
+    const badInput =
+      /could not|detect|missing|invalid|retake|visible|text/i.test(message) || message.length < 140;
+    res.status(badInput ? 422 : 500).json({ error: message });
   }
 });
 

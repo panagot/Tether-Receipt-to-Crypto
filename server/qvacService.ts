@@ -1,4 +1,4 @@
-/**
+﻿/**
  * QVAC: OCR (registry) + small LLM JSON extraction on the uploaded receipt image.
  */
 import {
@@ -16,6 +16,7 @@ import type {
 } from "@qvac/sdk";
 import { jsonrepair } from "jsonrepair";
 import sharp from "sharp";
+import { reconcileExtractedReceipt } from "./receiptReconcile.js";
 import { ReceiptExtractionSchema, type ReceiptExtraction } from "./schema.js";
 
 /** Downscale very large photos before OCR to keep memory predictable (rec_dyn handles line widths). */
@@ -39,12 +40,30 @@ async function prepareImageForOcr(image: Buffer): Promise<Buffer> {
   }
 }
 
-const SYSTEM_PROMPT = `You extract structured data from retail receipt OCR text.
+async function enhanceImageForOcr(image: Buffer): Promise<Buffer> {
+  try {
+    return await sharp(image)
+      .grayscale()
+      .normalize()
+      .sharpen()
+      .jpeg({ quality: 92 })
+      .toBuffer();
+  } catch (e) {
+    console.warn("[extract] sharp enhance skipped:", e instanceof Error ? e.message : e);
+    return image;
+  }
+}
+
+const SYSTEM_PROMPT = `You extract structured data from retail receipt OCR text. Receipts may be in any language or script (English, Greek, German, French, Spanish, Portuguese, Italian, Polish, Turkish, Russian, Arabic, Hindi, Japanese, Korean, Chinese, etc.). Read the slip in the language printed on it—you do not need English on the receipt.
 
 Reply with ONE JSON object only (no markdown fences, no prose before or after). Use exactly these keys and no others:
-merchant (string), total (JSON number only — not a quoted string; major currency units e.g. 12.34), currency (ISO 4217 string), category (one of: food, transport, retail, services, utilities, healthcare, other), confidence (number 0-1), notes (string or omit).
+merchant (string), total (JSON number only — not a quoted string; major currency units e.g. 12.34), currency (ISO 4217 three-letter code matching the receipt, e.g. EUR, GBP, JPY, USD, CAD, AUD, CHF, MXN, INR, CNY, PLN, SEK, AED, SAR, THB, VND), date (YYYY-MM-DD string when visible; omit if unknown), lineItems (optional array of objects with keys: description required string, quantity optional number, unitPrice optional number, total optional number), category (one of: food, transport, retail, services, utilities, healthcare, other), confidence (number 0-1 required), notes (string or omit).
 
-Put the receipt total in "total" (not subtotals). Use the final amount next to labels like "Receipt Total", "TOTAL", or "Balance due". The symbol $ is currency only — never read it as the digit 8. Keep "notes" short. Do not add extra keys (no payment_method, due_date, etc.).`;
+Put the receipt total in "total" (the final amount the customer pays: grand total / balance due, not line-item subtotals unless no grand total exists). Recognize total words in local languages, e.g. Total, Balance, Amount due, TTC, Gesamt, Montant, ΣΥΝΟΛΟ, ΜΕΡΙΚΟ ΣΥΝΟΛΟ, ИТОГО, 合計, 总计, 应付, 합계, お支払い, Impuesto incl. Never use long UID / auth-code / cryptographic hex / machine-id digit runs as the total.
+
+Numeric formats vary: European comma decimals (7,23), dot decimals (7.23), or thousands grouping (1.234,56 or 1,234.56). Always output "total" as a JSON number with a dot as decimal separator (e.g. 7.23). The symbols $ € £ ¥ ₹ are currency markers only—never read them as digits. If currency is ambiguous but a symbol is printed, infer the ISO code (€→EUR, £→GBP, ¥ ambiguous JP/CN—use receipt context).
+
+For "merchant", prefer the printed store or legal-entity name (often the first substantial line with letters: Α.Ε., S.A., LLC, Ltd, GmbH, OY, AB, 店, etc.). Do not use footer strings, auth codes, or random OCR noise as the merchant. Keep "notes" short. Only include lineItems when there is clear evidence in OCR text. Set confidence lower when OCR is noisy or uncertain. Do not add extra keys.`;
 
 let ocrModelId: string | null = null;
 let llmModelId: string | null = null;
@@ -69,8 +88,46 @@ function ocrUseGpu(): boolean {
   return process.env.QVAC_USE_GPU !== "false";
 }
 
+/**
+ * EasyOCR language list (QVAC). Wider list = better non‑English receipts; more langs = larger models / slower first load.
+ * Override with QVAC_OCR_LANG_LIST=comma-separated (e.g. "en" only if GPU memory is tight).
+ */
+function ocrLangList(): string[] {
+  const raw =
+    process.env.QVAC_OCR_LANG_LIST?.trim() ||
+    "en,el,de,fr,es,it,pt,pl,tr,ru,ar,ch_sim,ja,ko,hi,th";
+  const parts = raw
+    .split(/[,;]+/g)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return parts.length ? [...new Set(parts)] : ["en"];
+}
+
+function isRegistryLockError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  return /file descriptor could not be locked/i.test(msg);
+}
+
+async function withRegistryLockRetry<T>(task: () => Promise<T>): Promise<T> {
+  const attempts = Number(process.env.QVAC_REGISTRY_RETRY_ATTEMPTS || 4);
+  const pauseMs = Number(process.env.QVAC_REGISTRY_RETRY_MS || 400);
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await task();
+    } catch (e) {
+      lastErr = e;
+      if (!isRegistryLockError(e) || i === attempts - 1) throw e;
+      await new Promise((r) => setTimeout(r, pauseMs * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 async function pickOcrEntry(): Promise<ModelRegistryEntry> {
-  const list = await modelRegistrySearch({ modelType: "ocr" });
+  const list = await withRegistryLockRetry<ModelRegistryEntry[]>(
+    () => modelRegistrySearch({ modelType: "ocr" }) as Promise<ModelRegistryEntry[]>
+  );
   // Must use engine "onnx-ocr": other OCR engines use different runtimes/graphs; picking them first
   // (e.g. by name) causes ONNX errors like "Invalid input name: image".
   const onnxOcr = list.filter((m: ModelRegistryEntry) => m.engine === "onnx-ocr");
@@ -100,10 +157,12 @@ async function pickOcrEntry(): Promise<ModelRegistryEntry> {
 }
 
 async function pickLlmEntry(): Promise<ModelRegistryEntry> {
-  const list = await modelRegistrySearch({
-    modelType: "llm",
-    filter: "Llama-3.2-1B",
-  });
+  const list = await withRegistryLockRetry<ModelRegistryEntry[]>(() =>
+    modelRegistrySearch({
+      modelType: "llm",
+      filter: "Llama-3.2-1B",
+    }) as Promise<ModelRegistryEntry[]>
+  );
   const hit =
     list.find(
       (m: ModelRegistryEntry) =>
@@ -120,7 +179,7 @@ async function ensureOcr(): Promise<string> {
     modelSrc: registrySrc(entry),
     modelType: "ocr",
     modelConfig: {
-      langList: ["en"],
+      langList: ocrLangList(),
       useGPU: ocrUseGpu(),
       timeout: 120_000,
       pipelineMode: "easyocr",
@@ -186,110 +245,6 @@ function extractFirstBalancedJsonObject(s: string): string | null {
   return null;
 }
 
-/** Lines that usually carry the final payable amount (avoid bare "total" — matches too many lines). */
-const TOTAL_LINE_HINT =
-  /receipt\s+total|invoice\s+total|total\s*due|balance\s*due|amount\s*due|grand\s*total|balance\s*owing|pay\s*this\s*amount|amount\s*owing|^\s*total\s*[:#]/im;
-
-function amountsFromLine(line: string): number[] {
-  const out: number[] = [];
-  const re = /-?[\d,]+\.\d{2}\b/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(line)) !== null) {
-    const v = parseFloat(m[0].replace(/,/g, ""));
-    if (Number.isFinite(v)) out.push(v);
-  }
-  return out;
-}
-
-/** Label and amount are often split across consecutive OCR lines. */
-function* eachTotalHintWindow(ocrText: string): Generator<string, void, unknown> {
-  const lines = ocrText.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const window = [lines[i], lines[i + 1]].filter(Boolean).join("\n");
-    if (TOTAL_LINE_HINT.test(window)) yield window;
-  }
-}
-
-function amountsOnTotalHintLines(ocrText: string): Set<number> {
-  const found = new Set<number>();
-  for (const w of eachTotalHintWindow(ocrText)) {
-    for (const v of amountsFromLine(w)) found.add(v);
-  }
-  return found;
-}
-
-function dollarPrefixedAmounts(ocrText: string): Set<number> {
-  const dollars = new Set<number>();
-  const dollarRe = /\$\s*([\d,]+\.\d{1,2})\b/g;
-  let dm: RegExpExecArray | null;
-  while ((dm = dollarRe.exec(ocrText)) !== null) {
-    const v = parseFloat(dm[1].replace(/,/g, ""));
-    if (Number.isFinite(v)) dollars.add(v);
-  }
-  return dollars;
-}
-
-/**
- * OCR often glues a bold `$` into digits so `$154.06` reads as `8154.06`. We recover `154.06` when:
- * - OCR has a `$…` amount matching the strip-leading-8 value, or
- * - That value appears on a total/balance block (incl. split across two OCR lines), or
- * - The merged wrong total appears on such a block (label + `8154.06`), or (last resort) `154.06` appears elsewhere.
- */
-function fixTotalIfDollarSignMisreadAsEight(
-  extraction: ReceiptExtraction,
-  ocrText: string
-): ReceiptExtraction {
-  const tStr = extraction.total.toFixed(2);
-  if (!tStr.startsWith("8")) return extraction;
-
-  const alt = parseFloat(tStr.slice(1));
-  if (!Number.isFinite(alt) || alt <= 0) return extraction;
-
-  const dollars = dollarPrefixedAmounts(ocrText);
-  for (const d of dollars) {
-    if (Math.abs(d - alt) < 0.005) {
-      console.log("[extract] total correction:", extraction.total, "→", alt, "(leading 8; `$` amount in OCR)");
-      return { ...extraction, total: alt };
-    }
-  }
-
-  const onTotalLines = amountsOnTotalHintLines(ocrText);
-  for (const v of onTotalLines) {
-    if (Math.abs(v - alt) < 0.005) {
-      console.log("[extract] total correction:", extraction.total, "→", alt, "(leading 8; total/balance line in OCR)");
-      return { ...extraction, total: alt };
-    }
-  }
-
-  /** Large totals only: avoids rewriting small amounts like 8.50. */
-  const weakOk = extraction.total >= 1_000;
-  if (weakOk) {
-    /** Total block shows the merged misread (e.g. "Receipt Total" + "8154.06") with no clean 154.06 in OCR. */
-    for (const window of eachTotalHintWindow(ocrText)) {
-      for (const v of amountsFromLine(window)) {
-        if (Math.abs(v - extraction.total) < 0.005) {
-          console.log(
-            "[extract] total correction:",
-            extraction.total,
-            "→",
-            alt,
-            "(leading 8; merged `$` on total/balance line)"
-          );
-          return { ...extraction, total: alt };
-        }
-      }
-    }
-    /** Standalone correct cents elsewhere in OCR (line item, etc.). */
-    const altEsc = alt.toFixed(2).replace(/\./g, "\\.");
-    if (new RegExp(`\\b${altEsc}\\b`).test(ocrText)) {
-      console.log("[extract] total correction:", extraction.total, "→", alt, "(leading 8; same amount elsewhere in OCR)");
-      return { ...extraction, total: alt };
-    }
-  }
-
-  return extraction;
-}
-
 function parseJsonFromLlm(raw: string): unknown {
   const trimmed = raw.trim();
   const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -312,21 +267,106 @@ function parseJsonFromLlm(raw: string): unknown {
   }
 }
 
-export async function extractReceiptWithQvac(
-  image: Buffer
-): Promise<{ ocrText: string; extraction: ReceiptExtraction }> {
-  const imageForOcr = await prepareImageForOcr(image);
-  console.log("[extract] loading OCR model (first run can download; watch % logs)…");
-  const ocrId = await ensureOcr();
-  console.log("[extract] running OCR…");
+export type ExtractPhaseTimings = {
+  prepareMs: number;
+  ocrMs: number;
+  extractMs: number;
+};
+
+export type OcrOnlyTimings = {
+  prepareMs: number;
+  ocrMs: number;
+};
+
+function ocrSignalScore(s: string): number {
+  const printable = s.replace(/\s+/g, "");
+  if (!printable) return 0;
+  const alphaNum = (printable.match(/[0-9\p{L}]/gu) ?? []).length;
+  return alphaNum;
+}
+
+async function runOcrPass(
+  modelId: string,
+  image: Buffer,
+  paragraph: boolean
+): Promise<{ text: string; score: number }> {
   const { blocks } = ocr({
-    modelId: ocrId,
-    image: imageForOcr,
-    options: { paragraph: true },
+    modelId,
+    image,
+    options: { paragraph },
   });
   const ocrBlocks: OCRTextBlock[] = await blocks;
-  const ocrText = ocrBlocks.map((b: OCRTextBlock) => b.text).join("\n");
-  console.log("[extract] OCR chars:", ocrText.length);
+  const text = ocrBlocks.map((b: OCRTextBlock) => b.text).join("\n");
+  return { text, score: ocrSignalScore(text) };
+}
+
+export async function extractOcrTextWithQvac(
+  image: Buffer
+): Promise<{
+  ocrText: string;
+  timings: OcrOnlyTimings;
+  ocrLangsUsed: string[];
+  ocrSignalScore: number;
+  ocrRetryCount: number;
+}> {
+  const t0 = Date.now();
+  const langs = ocrLangList();
+  const imageForOcr = await prepareImageForOcr(image);
+  const enhancedImageForOcr = await enhanceImageForOcr(imageForOcr);
+  const t1 = Date.now();
+  const ocrId = await ensureOcr();
+  const primaryPass = await runOcrPass(ocrId, imageForOcr, true);
+  let ocrText = primaryPass.text;
+  let bestScore = primaryPass.score;
+  let retryCount = 0;
+  if (bestScore < 42) {
+    const fallbackPass = await runOcrPass(ocrId, enhancedImageForOcr, false);
+    retryCount = 1;
+    if (fallbackPass.score > bestScore) {
+      ocrText = fallbackPass.text;
+      bestScore = fallbackPass.score;
+    }
+  }
+  const t2 = Date.now();
+  return {
+    ocrText,
+    timings: {
+      prepareMs: t1 - t0,
+      ocrMs: t2 - t1,
+    },
+    ocrLangsUsed: langs,
+    ocrSignalScore: bestScore,
+    ocrRetryCount: retryCount,
+  };
+}
+
+export async function extractReceiptWithQvac(
+  image: Buffer
+): Promise<{
+  ocrText: string;
+  extraction: ReceiptExtraction;
+  timings: ExtractPhaseTimings;
+  ocrLangsUsed: string[];
+  ocrSignalScore: number;
+  ocrRetryCount: number;
+}> {
+  console.log("[extract] loading OCR model (first run can download; watch % logs)…");
+  const ocr = await extractOcrTextWithQvac(image);
+  const ocrText = ocr.ocrText;
+  const t2 = Date.now();
+  console.log("[extract] running OCR…", "langs:", ocr.ocrLangsUsed.join(","));
+  console.log(
+    "[extract] OCR chars:",
+    ocrText.length,
+    "signalScore:",
+    ocr.ocrSignalScore,
+    "retries:",
+    ocr.ocrRetryCount,
+    "prepareMs:",
+    ocr.timings.prepareMs,
+    "ocrMs:",
+    ocr.timings.ocrMs
+  );
 
   console.log("[extract] loading LLM…");
   const llmId = await ensureLlm();
@@ -339,10 +379,12 @@ export async function extractReceiptWithQvac(
       {
         role: "user",
         content:
-          `OCR text from receipt:\n---\n${ocrText}\n---\n` +
-          `Reply with JSON only. For "total", use the printed receipt total (major units). ` +
-          `Treat $ only as a currency marker, never as the digit 8. ` +
-          `If a printed total looks like 8154.xx but the same cents appear as xxx.xx after a $ or on the total line, use the smaller xxx.xx amount.`,
+          `OCR text from receipt (language may be non-English; scripts may be mixed or noisy):\n---\n${ocrText}\n---\n` +
+          `Reply with JSON only. For "total", use the final payable amount in major currency units. ` +
+          `If amounts use a comma as the decimal separator (e.g. 7,23), output the number with a dot (7.23). ` +
+          `Treat currency symbols as markers, never as digits. ` +
+          `If a printed total looks like 8154.xx but the same cents appear as xxx.xx after a $ or on the total line, use the smaller xxx.xx amount. ` +
+          `For "merchant", pick the clearest business name from the header, not footer noise.`,
       },
     ],
     generationParams: { temp: 0.05, predict: 2048 },
@@ -365,9 +407,29 @@ export async function extractReceiptWithQvac(
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(`LLM JSON did not match receipt schema: ${msg}. Raw (truncated): ${raw.slice(0, 500)}`);
   }
-  extraction = fixTotalIfDollarSignMisreadAsEight(extraction, ocrText);
-  console.log("[extract] done", extraction.merchant, extraction.total, extraction.currency);
-  return { ocrText, extraction };
+  extraction = reconcileExtractedReceipt(extraction, ocrText);
+  const t3 = Date.now();
+  const timings: ExtractPhaseTimings = {
+    prepareMs: ocr.timings.prepareMs,
+    ocrMs: ocr.timings.ocrMs,
+    extractMs: t3 - t2,
+  };
+  console.log(
+    "[extract] done",
+    extraction.merchant,
+    extraction.total,
+    extraction.currency,
+    "timingsMs:",
+    timings
+  );
+  return {
+    ocrText,
+    extraction,
+    timings,
+    ocrLangsUsed: ocr.ocrLangsUsed,
+    ocrSignalScore: ocr.ocrSignalScore,
+    ocrRetryCount: ocr.ocrRetryCount,
+  };
 }
 
 export async function shutdownQvac(): Promise<void> {

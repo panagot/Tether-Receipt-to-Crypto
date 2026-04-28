@@ -13,6 +13,19 @@
 
 **Architecture:** Vite UI + Express API on your machine. Receipt bytes hit the **local** API; QVAC runs **OCR**, **LLM JSON extraction**, and optional **embedding** for search — no cloud inference for those steps. Configure `WALLET_SEED` + `USDT_MINT` for `/api/pay`. On **Vercel**, the repo includes **plain Node `api/**/*.js` proxies** (see `api/`) that forward to **`RTC_API_PROXY_TARGET`** so the browser can keep same-origin `/api` without rebaking `VITE_API_BASE_URL` when your tunnel URL changes. For very long extractions, prefer **`VITE_API_BASE_URL`** (browser → tunnel directly) or a paid Vercel function duration tier, because the proxy is capped by Vercel’s function timeout (e.g. 60s on Hobby).
 
+## QVAC Integration Depth (sidetrack rubric)
+
+- **Primary path:** `@qvac/ocr-onnx` for receipt OCR + `@qvac/llm-llamacpp` for strict JSON extraction (`merchant`, `total`, `currency`, optional `date`/`lineItems`, `category`, `confidence`).
+- **Second capability:** `@qvac/embed-llamacpp` indexes extracted receipts for local semantic search (`/api/receipts/index`, `/api/receipts/search`).
+- **Human-in-the-loop guardrail:** no chain action is sent automatically; user must explicitly confirm recipient + amount before pressing **Send USDT**.
+
+### Vulkan / VRAM / target notes
+
+- **Desktop target (recommended):** Windows laptop/desktop with Vulkan-capable GPU for faster first-run model load and lower extraction latency.
+- **VRAM guidance:** larger OCR language sets and LLM context consume more memory; if GPU memory is tight, narrow OCR languages with `QVAC_OCR_LANG_LIST=en` (or small list).
+- **CPU fallback:** set `QVAC_USE_GPU=false` to run OCR without GPU. It works but first extraction and retries are slower.
+- **Mobile target:** browser capture is mobile-friendly, but QVAC inference runs on the backend host (your own machine/server), not inside the phone browser.
+
 ## Requirements
 
 - Node.js **≥ 22.17**
@@ -58,7 +71,38 @@ Run `verify:backend` (and optionally `verify:backend:extract`) before testing **
 | POST | `/api/receipts/index` | JSON `{ merchant, total, category, ocrText }` → QVAC embed + save under `.rtc-data/` |
 | POST | `/api/receipts/search` | JSON `{ query, limit? }` → cosine-ranked receipt hits |
 
+### Extraction schema (strict)
+
+`/api/extract` returns `extraction` with this strict shape:
+
+- `merchant`: string
+- `total`: number
+- `currency`: ISO 4217 code
+- `date` (optional): `YYYY-MM-DD`
+- `lineItems` (optional): array of `{ description, quantity?, unitPrice?, total? }`
+- `category`: one of `food | transport | retail | services | utilities | healthcare | other`
+- `confidence`: number `0..1`
+- `notes` (optional): string
+
 **Embedding model issues:** Receipt search skips non-`.gguf` registry entries (e.g. stray `*.tensors.txt`) and tries several GGUFs in order. Override with `RTC_EMBEDDING_REGISTRY_PATH` set to a **registry path string** that matches `ModelRegistryEntry.registryPath` (see QVAC registry). If a download is corrupt, delete the broken folder under `~/.qvac/models/` and retry.
+
+## Frontier + Earn submission checklist
+
+- Keep one **public GitHub repo** for the complete app and deployment notes.
+- Include one **working demo video** that shows offline extraction first, then optional network/signing.
+- Ensure README is reproducible: exact setup, model/runtime notes, and GPU/Vulkan constraints.
+- Submit both:
+  - **Colosseum Frontier** project submission (before sponsor deadline).
+  - **Superteam Earn Tether Frontier sidetrack** listing submission with same repo + video links.
+
+## Demo script (offline-first)
+
+1. Start app normally and confirm API health.
+2. Enable airplane mode (or disconnect internet) on the demo device.
+3. Capture/upload receipt and run extraction; show OCR + structured JSON fields and confidence.
+4. Edit/confirm fields manually (human-in-the-loop step).
+5. Re-enable network only for optional sync/search refresh or WDK signature broadcast.
+6. Execute one explicit **Send USDT** action after confirmation checkbox is checked.
 
 ## Vercel
 
