@@ -267,6 +267,60 @@ function parseJsonFromLlm(raw: string): unknown {
   }
 }
 
+function asFiniteNumber(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number.parseFloat(v.trim().replace(/,/g, ""));
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function sanitizeLineItems(raw: unknown): unknown {
+  if (!Array.isArray(raw)) return undefined;
+  const out: Array<Record<string, unknown>> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Record<string, unknown>;
+    const description = typeof r.description === "string" ? r.description.trim() : "";
+    if (!description) continue;
+    const quantity = asFiniteNumber(r.quantity);
+    const unitPrice = asFiniteNumber(r.unitPrice);
+    const total = asFiniteNumber(r.total) ?? asFiniteNumber(r.amount);
+    const clean: Record<string, unknown> = { description };
+    if (quantity != null) clean.quantity = quantity;
+    if (unitPrice != null) clean.unitPrice = unitPrice;
+    if (total != null) clean.total = total;
+    out.push(clean);
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+
+function sanitizeExtractionCandidate(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const src = raw as Record<string, unknown>;
+  const merchant = typeof src.merchant === "string" ? src.merchant.trim() : src.merchant;
+  const total = asFiniteNumber(src.total) ?? src.total;
+  const currency = typeof src.currency === "string" ? src.currency.trim() : src.currency;
+  const date = typeof src.date === "string" ? src.date.trim() : src.date;
+  const notes = typeof src.notes === "string" ? src.notes.trim() : src.notes;
+  const confidence = asFiniteNumber(src.confidence) ?? src.confidence;
+  const category =
+    typeof src.category === "string" ? src.category.trim().toLowerCase() : src.category;
+  const lineItems = sanitizeLineItems(src.lineItems);
+  return {
+    merchant,
+    total,
+    currency,
+    date,
+    lineItems,
+    category,
+    confidence,
+    notes,
+  };
+}
+
 export type ExtractPhaseTimings = {
   prepareMs: number;
   ocrMs: number;
@@ -402,7 +456,7 @@ export async function extractReceiptWithQvac(
   }
   let extraction: ReceiptExtraction;
   try {
-    extraction = ReceiptExtractionSchema.parse(parsed);
+    extraction = ReceiptExtractionSchema.parse(sanitizeExtractionCandidate(parsed));
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(`LLM JSON did not match receipt schema: ${msg}. Raw (truncated): ${raw.slice(0, 500)}`);

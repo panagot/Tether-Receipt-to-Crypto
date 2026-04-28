@@ -1445,6 +1445,7 @@ export function App() {
 
       <ReceiptCameraScanner
         open={receiptScannerOpen}
+        title="Scan receipt"
         onClose={() => setReceiptScannerOpen(false)}
         onCapture={(f) => {
           onFile(f, { fromCamera: true });
@@ -1453,6 +1454,7 @@ export function App() {
       />
       <ReceiptCameraScanner
         open={posScannerOpen}
+        title="Scan POS receipt"
         onClose={() => setPosScannerOpen(false)}
         onCapture={(f) => {
           onPosFile(f);
