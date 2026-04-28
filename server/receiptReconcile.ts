@@ -34,16 +34,20 @@ export function shouldOcrOverrideLlmTotal(llm: number, candidate: number): boole
 }
 
 function parseStandaloneAmountLine(line: string): number | null {
-  const c = line.match(/^\s*(-?)(\d{1,7}),(\d{2})\s*$/);
+  const normalized = line.trim().replace(/\u00a0/g, " ").replace(/\s+/g, " ");
+  const sp = normalized.match(/^(-?)(\d{1,7})\s+(\d{2})$/);
+  if (sp) return parseFloat(`${sp[1]}${sp[2]}.${sp[3]}`);
+  const c = normalized.match(/^(-?)(\d{1,7}),(\d{2})$/);
   if (c) return parseFloat(`${c[1]}${c[2]}.${c[3]}`);
-  const d = line.match(/^\s*(-?)(\d{1,7})\.(\d{2})\s*$/);
+  const d = normalized.match(/^(-?)(\d{1,7})\.(\d{2})$/);
   if (d) return parseFloat(`${d[1]}${d[2]}.${d[3]}`);
   return null;
 }
 
 function parseInlineTotalOnLabelLine(line: string): number | null {
   if (!EU_TOTAL_LABEL.test(line)) return null;
-  const m = line.match(/(\d{1,4})[.,](\d{2})\s*$/);
+  const normalized = line.trim().replace(/\u00a0/g, " ").replace(/\s+/g, " ");
+  const m = normalized.match(/(\d{1,4})(?:\s+|[.,])(\d{2})\s*$/);
   if (!m) return null;
   const v = parseFloat(`${m[1]}.${m[2]}`);
   return Number.isFinite(v) && v > 0 && v < 250_000 ? v : null;
@@ -153,7 +157,8 @@ function fixTotalFromEuAndSynoloOcr(
   extraction: ReceiptExtraction,
   ocrText: string
 ): ReceiptExtraction {
-  const lines = ocrText.split(/\r?\n/).map((l) => l.trim());
+  const scopedOcrText = ocrBeforeElectronicFooter(ocrText);
+  const lines = scopedOcrText.split(/\r?\n/).map((l) => l.trim());
   let candidate: number | null = null;
   let labelLine = "";
 
@@ -168,7 +173,9 @@ function fixTotalFromEuAndSynoloOcr(
     if (!EU_TOTAL_LABEL.test(line)) continue;
     labelLine = labelLine || line;
     for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
-      const v = parseStandaloneAmountLine(lines[j]);
+      const nextLine = lines[j];
+      if (/\bUID\b|Auth\s*code|EPSILON|epsilondigital|ECF47|0x[0-9a-f]{8,}/i.test(nextLine)) continue;
+      const v = parseStandaloneAmountLine(nextLine);
       if (v != null && v > 0 && v < 250_000) {
         candidate = v;
         labelLine = line;
@@ -179,7 +186,7 @@ function fixTotalFromEuAndSynoloOcr(
   }
 
   if (candidate == null) {
-    candidate = bestTotalFromSynoloLines(ocrText);
+    candidate = bestTotalFromSynoloLines(scopedOcrText);
     if (candidate != null) labelLine = labelLine || "ΣΥΝΟΛΟ/SYNOLO block";
   }
 
@@ -191,8 +198,8 @@ function fixTotalFromEuAndSynoloOcr(
   if (!shouldOcrOverrideLlmTotal(t, candidate)) return extraction;
 
   let currency = extraction.currency;
-  if (ocrLooksEuro(ocrText, labelLine) && extraction.currency === "USD") currency = "EUR";
-  if (/(ΣΥΝΟΛΟ|ΜΕΡΙΚΟ|ΕΥΡΩ|EUR|€)/i.test(ocrText) && extraction.currency === "USD") currency = "EUR";
+  if (ocrLooksEuro(scopedOcrText, labelLine) && extraction.currency === "USD") currency = "EUR";
+  if (/(ΣΥΝΟΛΟ|ΜΕΡΙΚΟ|ΕΥΡΩ|EUR|€)/i.test(scopedOcrText) && extraction.currency === "USD") currency = "EUR";
 
   console.log("[extract] total correction:", t, "→", candidate, "(OCR total vs LLM; conservative gate)");
   return { ...extraction, total: candidate, currency };
@@ -200,15 +207,21 @@ function fixTotalFromEuAndSynoloOcr(
 
 export function amountsFromLine(line: string): number[] {
   const out: number[] = [];
+  const normalized = line.replace(/\u00a0/g, " ").replace(/\s+/g, " ");
   const re = /-?[\d,]+\.\d{2}\b/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(line)) !== null) {
+  while ((m = re.exec(normalized)) !== null) {
     const v = parseFloat(m[0].replace(/,/g, ""));
     if (Number.isFinite(v)) out.push(v);
   }
   const reEu = /-?\d{1,7},\d{2}\b/g;
-  while ((m = reEu.exec(line)) !== null) {
+  while ((m = reEu.exec(normalized)) !== null) {
     const v = parseFloat(m[0].replace(",", "."));
+    if (Number.isFinite(v)) out.push(v);
+  }
+  const reSpaced = /-?\d{1,7}\s+\d{2}\b/g;
+  while ((m = reSpaced.exec(normalized)) !== null) {
+    const v = parseFloat(m[0].replace(/\s+/, "."));
     if (Number.isFinite(v)) out.push(v);
   }
   return out;
