@@ -144,6 +144,75 @@ function UploadIcon() {
   );
 }
 
+function PipelineStepIcon({ step }: { step: 1 | 2 | 3 | 4 | 5 | 6 }) {
+  if (step === 1) {
+    return (
+      <svg className="pipeline-step-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="8" y="10" width="48" height="44" rx="8" fill="#fff" stroke="#0f1419" strokeWidth="2.5" />
+        <rect x="16" y="20" width="22" height="5" rx="2.5" fill="#dbe3ea" />
+        <rect x="16" y="29" width="30" height="4" rx="2" fill="#dbe3ea" />
+        <rect x="16" y="37" width="18" height="4" rx="2" fill="#dbe3ea" />
+        <rect x="36" y="36" width="14" height="10" rx="3" fill="#bbf7d0" stroke="#0f1419" strokeWidth="2" />
+      </svg>
+    );
+  }
+  if (step === 2) {
+    return (
+      <svg className="pipeline-step-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="20" y="8" width="24" height="48" rx="7" fill="#1e293b" stroke="#0f1419" strokeWidth="2.5" />
+        <rect x="24" y="14" width="16" height="34" rx="3.5" fill="#f0f9ff" stroke="#0f1419" strokeWidth="2" />
+        <path d="M12 28h5M47 28h5M12 36h5M47 36h5" stroke="#0d4a6e" strokeWidth="2.2" strokeLinecap="round" />
+        <circle cx="32" cy="52" r="2.5" fill="#94a3b8" />
+      </svg>
+    );
+  }
+  if (step === 3) {
+    return (
+      <svg className="pipeline-step-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="6" y="10" width="52" height="34" rx="7" fill="#f8fafc" stroke="#0f1419" strokeWidth="2.5" />
+        <path d="M14 34l9-10 7 7 7-8 13 11" stroke="#0d4a6e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <rect x="18" y="48" width="28" height="6" rx="3" fill="#dbe3ea" />
+        <circle cx="50" cy="51" r="7" fill="#e8f5ec" stroke="#0d5c2e" strokeWidth="2" />
+        <path d="M47 51.5l2 2 4-5" stroke="#0d5c2e" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (step === 4) {
+    return (
+      <svg className="pipeline-step-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="8" y="10" width="48" height="42" rx="8" fill="#fff" stroke="#0f1419" strokeWidth="2.5" />
+        <rect x="16" y="20" width="19" height="6" rx="3" fill="#fee2e2" />
+        <rect x="16" y="31" width="30" height="5" rx="2.5" fill="#dbe3ea" />
+        <rect x="16" y="40" width="24" height="5" rx="2.5" fill="#dbe3ea" />
+        <circle cx="48" cy="44" r="9" fill="#eff6ff" stroke="#0d4a6e" strokeWidth="2.2" />
+        <path d="M48 39v6M48 49h.01" stroke="#0d4a6e" strokeWidth="2.4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (step === 5) {
+    return (
+      <svg className="pipeline-step-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="8" y="14" width="22" height="16" rx="4" fill="#fff7ed" stroke="#0f1419" strokeWidth="2.2" />
+        <text x="19" y="25" textAnchor="middle" fontSize="8.5" fontWeight="800" fill="#0f1419">FX</text>
+        <path d="M31 22h11" stroke="#0d4a6e" strokeWidth="2.4" strokeLinecap="round" />
+        <path d="m38 18 5 4-5 4" stroke="#0d4a6e" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="49" cy="22" r="11" fill="#dcfce7" stroke="#0d5c2e" strokeWidth="2.2" />
+        <text x="49" y="25.5" textAnchor="middle" fontSize="8" fontWeight="800" fill="#0d5c2e">USDT</text>
+        <rect x="14" y="38" width="36" height="12" rx="6" fill="#e8f5ec" stroke="#0d5c2e" strokeWidth="1.8" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="pipeline-step-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <rect x="8" y="10" width="48" height="44" rx="8" fill="#f8fafc" stroke="#0f1419" strokeWidth="2.5" />
+      <circle cx="24" cy="32" r="6.5" fill="#dcfce7" stroke="#0d5c2e" strokeWidth="2" />
+      <circle cx="40" cy="32" r="6.5" fill="#dcfce7" stroke="#0d5c2e" strokeWidth="2" />
+      <path d="M24 24v16M40 24v16M17 32h30" stroke="#0d5c2e" strokeWidth="2" strokeLinecap="round" />
+      <path d="M13 52h38" stroke="#0f1419" strokeWidth="2.2" strokeLinecap="round" opacity="0.4" />
+    </svg>
+  );
+}
+
 function readSettlementDraft(): { recipient?: string; memo?: string; amountBase?: string } | null {
   try {
     const raw = localStorage.getItem(SETTLEMENT_LS);
@@ -203,6 +272,7 @@ export function App() {
   const [searchResults, setSearchResults] = useState<ReceiptSearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [pipelineOpen, setPipelineOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -471,6 +541,15 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [file, loading, extract]);
+
+  useEffect(() => {
+    if (!pipelineOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPipelineOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pipelineOpen]);
 
   const pay = async () => {
     setPayLoading(true);
@@ -1501,6 +1580,15 @@ export function App() {
               </p>
             </div>
             <nav className="site-footer__links" aria-label="External resources">
+              <button
+                type="button"
+                className="site-footer__pipeline-btn"
+                onClick={() => setPipelineOpen(true)}
+                aria-haspopup="dialog"
+                aria-controls="pipeline-modal"
+              >
+                How it works
+              </button>
               <a
                 href="https://github.com/panagot/Tether-Receipt-to-Crypto"
                 target="_blank"
@@ -1525,6 +1613,105 @@ export function App() {
           </div>
         </div>
       </footer>
+
+      {pipelineOpen && (
+        <div
+          className="pipeline-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pipeline-title"
+          id="pipeline-modal"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPipelineOpen(false);
+          }}
+        >
+          <div className="pipeline-modal">
+            <div className="pipeline-modal__head">
+              <h3 id="pipeline-title">Live pipeline: receipt to USDT</h3>
+              <button type="button" className="pipeline-modal__close" onClick={() => setPipelineOpen(false)}>
+                Close
+              </button>
+            </div>
+            <p className="pipeline-modal__lead">
+              Six-step flow: receipt issued, smartphone scan, local OCR + extraction, field review, FX to USDT
+              hint, then optional settlement.
+            </p>
+            <ol className="pipeline-stage-grid" aria-label="Receipt to settlement flow">
+              <li className={`pipeline-stage-card${file ? " pipeline-stage-card--done" : ""}`}>
+                <span className="pipeline-stage-card__badge" aria-hidden="true">
+                  1
+                </span>
+                <PipelineStepIcon step={1} />
+                <div>
+                  <strong>Merchant/shop issues receipt</strong>
+                  <p>Receipt is issued at checkout.</p>
+                </div>
+              </li>
+              <li className={`pipeline-stage-card${file ? " pipeline-stage-card--done" : ""}`}>
+                <span className="pipeline-stage-card__badge" aria-hidden="true">
+                  2
+                </span>
+                <PipelineStepIcon step={2} />
+                <div>
+                  <strong>User scans with smartphone</strong>
+                  <p>Phone camera captures receipt image.</p>
+                </div>
+              </li>
+              <li className={`pipeline-stage-card${loading ? " pipeline-stage-card--active" : ocrText ? " pipeline-stage-card--done" : ""}`}>
+                <span className="pipeline-stage-card__badge" aria-hidden="true">
+                  3
+                </span>
+                <PipelineStepIcon step={3} />
+                <div>
+                  <strong>Local OCR + extraction</strong>
+                  <p>QVAC extracts merchant, total, currency.</p>
+                </div>
+              </li>
+              <li
+                className={`pipeline-stage-card${
+                  loading && !extraction ? " pipeline-stage-card--active" : extraction ? " pipeline-stage-card--done" : ""
+                }`}
+              >
+                <span className="pipeline-stage-card__badge" aria-hidden="true">
+                  4
+                </span>
+                <PipelineStepIcon step={4} />
+                <div>
+                  <strong>Field confidence + review</strong>
+                  <p>Confidence appears for quick operator review.</p>
+                </div>
+              </li>
+              <li className={`pipeline-stage-card${suggestedBase != null ? " pipeline-stage-card--done" : ""}`}>
+                <span className="pipeline-stage-card__badge" aria-hidden="true">
+                  5
+                </span>
+                <PipelineStepIcon step={5} />
+                <div>
+                  <strong>FX to USDT hint</strong>
+                  <p>Amount is mapped to indicative USDT.</p>
+                </div>
+              </li>
+              <li className={`pipeline-stage-card${payResult ? " pipeline-stage-card--done" : payLoading ? " pipeline-stage-card--active" : ""}`}>
+                <span className="pipeline-stage-card__badge" aria-hidden="true">
+                  6
+                </span>
+                <PipelineStepIcon step={6} />
+                <div>
+                  <strong>Optional settlement</strong>
+                  <p>User may proceed to sign settlement.</p>
+                </div>
+              </li>
+            </ol>
+            <p className="pipeline-modal__status" role="status" aria-live="polite">
+              {loading
+                ? "Currently processing: OCR and extraction are running."
+                : payLoading
+                  ? "Currently processing: preparing on-chain settlement."
+                  : "Pipeline is idle and ready to run at any time."}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

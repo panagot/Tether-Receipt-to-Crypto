@@ -626,6 +626,24 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 1rem 1.75rem;
+  align-items: center;
+}
+
+.site-footer__pipeline-btn {
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(13, 74, 110, 0.25);
+  background: rgba(13, 74, 110, 0.08);
+  color: var(--accent);
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.site-footer__pipeline-btn:hover {
+  background: rgba(13, 74, 110, 0.13);
+  border-color: rgba(13, 74, 110, 0.38);
 }
 
 .site-footer__links a {
@@ -1380,6 +1398,154 @@ button.secondary--ghost:hover:not(:disabled) {
     max(1rem, var(--safe-left));
 }
 
+.pipeline-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  background: rgba(15, 20, 25, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(0.9rem, var(--safe-top)) max(0.9rem, var(--safe-right)) max(0.9rem, var(--safe-bottom))
+    max(0.9rem, var(--safe-left));
+}
+
+.pipeline-modal {
+  width: min(760px, 100%);
+  max-height: min(92vh, 760px);
+  overflow: auto;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--line);
+  padding: 1rem 1.05rem 1.15rem;
+}
+
+.pipeline-modal__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.pipeline-modal__head h3 {
+  margin: 0;
+  font-size: 1.12rem;
+  font-family: var(--font-display);
+  line-height: 1.2;
+}
+
+.pipeline-modal__close {
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink-muted);
+  min-height: 42px;
+  padding: 0.45rem 0.75rem;
+}
+
+.pipeline-modal__lead {
+  margin: 0.7rem 0 0.9rem;
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  line-height: 1.48;
+}
+
+.pipeline-stage-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.pipeline-stage-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 0.65rem 0.75rem;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: start;
+  gap: 0.55rem 0.75rem;
+}
+
+.pipeline-step-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: block;
+}
+
+.pipeline-stage-card strong {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+
+.pipeline-stage-card p {
+  margin: 0.24rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  line-height: 1.4;
+}
+
+.pipeline-stage-card__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(13, 74, 110, 0.12);
+  border: 1px solid rgba(13, 74, 110, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.pipeline-stage-card--active {
+  border-color: rgba(13, 74, 110, 0.34);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.pipeline-stage-card--active .pipeline-stage-card__badge {
+  background: rgba(13, 74, 110, 0.16);
+}
+
+.pipeline-stage-card--done {
+  border-color: rgba(13, 92, 46, 0.24);
+  background: #f0f8f3;
+}
+
+.pipeline-stage-card--done .pipeline-stage-card__badge {
+  color: var(--success);
+  background: rgba(13, 92, 46, 0.14);
+  border-color: rgba(13, 92, 46, 0.26);
+}
+
+@media (max-width: 719px) {
+  .pipeline-stage-card {
+    grid-template-columns: auto 1fr;
+  }
+
+  .pipeline-step-icon {
+    grid-column: 1 / -1;
+    width: 2rem;
+    height: 2rem;
+    margin-left: 2.45rem;
+  }
+}
+
+.pipeline-modal__status {
+  margin: 0.85rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+}
+
 .scan-modal {
   width: min(420px, 100%);
   max-height: min(90vh, 640px);
@@ -1789,6 +1955,15 @@ button.secondary--ghost:hover:not(:disabled) {
 
 @media (max-width: 719px) {
   .scan-overlay > .scan-modal:not(.scan-modal--receipt) {
+    width: 100%;
+    max-width: none;
+    max-height: min(100dvh, 100vh);
+    border-radius: 0;
+    padding: max(0.75rem, var(--safe-top)) max(1rem, var(--safe-right)) max(1rem, var(--safe-bottom))
+      max(1rem, var(--safe-left));
+  }
+
+  .pipeline-modal {
     width: 100%;
     max-width: none;
     max-height: min(100dvh, 100vh);
