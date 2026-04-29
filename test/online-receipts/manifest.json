@@ -1,0 +1,42 @@
+[
+    {
+        "file":  "sroie-001.jpg",
+        "url":  "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/001.jpg"
+    },
+    {
+        "file":  "sroie-002.jpg",
+        "url":  "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/002.jpg"
+    },
+    {
+        "file":  "sroie-003.jpg",
+        "url":  "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/003.jpg"
+    },
+    {
+        "file":  "sroie-004.jpg",
+        "url":  "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/004.jpg"
+    },
+    {
+        "file":  "sroie-005.jpg",
+        "url":  "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/005.jpg"
+    },
+    {
+        "file":  "sroie-006.jpg",
+        "url":  "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/006.jpg"
+    },
+    {
+        "file":  "sroie-007.jpg",
+        "url":  "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/007.jpg"
+    },
+    {
+        "file":  "sroie-008.jpg",
+        "url":  "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/008.jpg"
+    },
+    {
+        "file":  "invoice-barlow.png",
+        "url":  "https://raw.githubusercontent.com/louiskounios/simple-invoice-generator/master/examples/Barlow.png"
+    },
+    {
+        "file":  "invoice-sarabun.png",
+        "url":  "https://raw.githubusercontent.com/louiskounios/simple-invoice-generator/master/examples/Sarabun.png"
+    }
+]

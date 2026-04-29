@@ -23,6 +23,17 @@ function isAllowedReceiptFile(f: File): boolean {
   return false;
 }
 
+function sanitizeHealthDetail(detail: string | null): string | null {
+  if (!detail) return null;
+  if (/upstream request failed/i.test(detail) && /ENOTFOUND/i.test(detail)) {
+    return (
+      "Upstream host DNS lookup failed (likely an expired tunnel URL). " +
+      "Update RTC_API_PROXY_TARGET to a live HTTPS origin and redeploy."
+    );
+  }
+  return detail;
+}
+
 type ApiHealth = {
   ok?: boolean;
   solanaCluster?: string;
@@ -669,10 +680,10 @@ export function App() {
           <code className="rtc-api-origin-hint__code">VITE_API_BASE_URL</code> at build time, or open
           once with <code className="rtc-api-origin-hint__code">?rtc_api=https://your-tunnel</code>. For
           laptop-only use, run <code className="rtc-api-origin-hint__code">npm run dev</code>.
-          {healthDetail && (
+          {sanitizeHealthDetail(healthDetail) && (
             <span className="rtc-api-origin-hint__detail" role="log">
               {" "}
-              ({healthDetail})
+              ({sanitizeHealthDetail(healthDetail)})
             </span>
           )}
         </p>

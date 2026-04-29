@@ -57,11 +57,11 @@ async function enhanceImageForOcr(image: Buffer): Promise<Buffer> {
 const SYSTEM_PROMPT = `You extract structured data from retail receipt OCR text. Receipts may be in any language or script (English, Greek, German, French, Spanish, Portuguese, Italian, Polish, Turkish, Russian, Arabic, Hindi, Japanese, Korean, Chinese, etc.). Read the slip in the language printed on it—you do not need English on the receipt.
 
 Reply with ONE JSON object only (no markdown fences, no prose before or after). Use exactly these keys and no others:
-merchant (string), total (JSON number only — not a quoted string; major currency units e.g. 12.34), currency (ISO 4217 three-letter code matching the receipt, e.g. EUR, GBP, JPY, USD, CAD, AUD, CHF, MXN, INR, CNY, PLN, SEK, AED, SAR, THB, VND), date (YYYY-MM-DD string when visible; omit if unknown), lineItems (optional array of objects with keys: description required string, quantity optional number, unitPrice optional number, total optional number), category (one of: food, transport, retail, services, utilities, healthcare, other), confidence (number 0-1 required), notes (string or omit).
+merchant (string), total (JSON number only — not a quoted string; major currency units e.g. 12.34), currency (ISO 4217 three-letter code matching the receipt, e.g. EUR, GBP, JPY, USD, CAD, AUD, CHF, MXN, INR, CNY, PLN, SEK, AED, SAR, THB, VND, MYR), date (YYYY-MM-DD string when visible; omit if unknown), lineItems (optional array of objects with keys: description required string, quantity optional number, unitPrice optional number, total optional number), category (one of: food, transport, retail, services, utilities, healthcare, other), confidence (number 0-1 required), notes (string or omit).
 
 Put the receipt total in "total" (the final amount the customer pays: grand total / balance due, not line-item subtotals unless no grand total exists). Recognize total words in local languages, e.g. Total, Balance, Amount due, TTC, Gesamt, Montant, ΣΥΝΟΛΟ, ΜΕΡΙΚΟ ΣΥΝΟΛΟ, ИТОГО, 合計, 总计, 应付, 합계, お支払い, Impuesto incl. Never use long UID / auth-code / cryptographic hex / machine-id digit runs as the total.
 
-Numeric formats vary: European comma decimals (7,23), dot decimals (7.23), or thousands grouping (1.234,56 or 1,234.56). Always output "total" as a JSON number with a dot as decimal separator (e.g. 7.23). The symbols $ € £ ¥ ₹ are currency markers only—never read them as digits. If currency is ambiguous but a symbol is printed, infer the ISO code (€→EUR, £→GBP, ¥ ambiguous JP/CN—use receipt context).
+Numeric formats vary: European comma decimals (7,23), dot decimals (7.23), or thousands grouping (1.234,56 or 1,234.56). Always output "total" as a JSON number with a dot as decimal separator (e.g. 7.23). The symbols $ € £ ¥ ₹ are currency markers only—never read them as digits. If currency is ambiguous but a symbol is printed, infer the ISO code (€→EUR, £→GBP, ¥ ambiguous JP/CN—use receipt context). If "RM" or "MYR" appears, use MYR.
 
 For "merchant", prefer the printed store or legal-entity name (often the first substantial line with letters: Α.Ε., S.A., LLC, Ltd, GmbH, OY, AB, 店, etc.). Do not use footer strings, auth codes, or random OCR noise as the merchant. Keep "notes" short. Only include lineItems when there is clear evidence in OCR text. Set confidence lower when OCR is noisy or uncertain. Do not add extra keys.`;
 
@@ -88,6 +88,15 @@ function ocrUseGpu(): boolean {
   return process.env.QVAC_USE_GPU !== "false";
 }
 
+const OCR_LANG_ALIASES: Record<string, string> = {
+  "zh-cn": "ch_sim",
+  "zh_cn": "ch_sim",
+  "zh-hans": "ch_sim",
+  "zh-tw": "ch_tra",
+  "zh_tw": "ch_tra",
+  "zh-hant": "ch_tra",
+};
+
 /**
  * EasyOCR language list (QVAC). Wider list = better non‑English receipts; more langs = larger models / slower first load.
  * Override with QVAC_OCR_LANG_LIST=comma-separated (e.g. "en" only if GPU memory is tight).
@@ -100,7 +109,40 @@ function ocrLangList(): string[] {
     .split(/[,;]+/g)
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
-  return parts.length ? [...new Set(parts)] : ["en"];
+  const normalized = (parts.length ? parts : ["en"]).map((lang) => OCR_LANG_ALIASES[lang] ?? lang);
+  const deduped = [...new Set(normalized)];
+  // QVAC/EasyOCR rejects Thai when combined with languages other than English.
+  if (deduped.includes("th") && deduped.some((lang) => lang !== "th" && lang !== "en")) {
+    const safe = deduped.filter((lang) => lang !== "th");
+    if (!safe.includes("en")) safe.unshift("en");
+    console.warn(
+      '[extract] OCR langList sanitized: removed "th" from incompatible mixed-language set:',
+      deduped.join(",")
+    );
+    return safe;
+  }
+  return deduped.length ? deduped : ["en"];
+}
+
+function isLangCompatibilityError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  return /is only compatible with english,\s*try langlist=/i.test(msg);
+}
+
+function suggestedLangListFromError(e: unknown): string[] | null {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  const m = msg.match(/try langlist=\s*(\[[^\]]+\])/i);
+  if (!m) return null;
+  try {
+    const parsed = JSON.parse(m[1]) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const langs = parsed
+      .map((v) => (typeof v === "string" ? v.trim().toLowerCase() : ""))
+      .filter(Boolean);
+    return langs.length ? [...new Set(langs)] : null;
+  } catch {
+    return null;
+  }
 }
 
 function isRegistryLockError(e: unknown): boolean {
@@ -175,21 +217,37 @@ async function pickLlmEntry(): Promise<ModelRegistryEntry> {
 async function ensureOcr(): Promise<string> {
   if (ocrModelId) return ocrModelId;
   const entry = await pickOcrEntry();
+  const baseLangList = ocrLangList();
+  const buildConfig = (langList: string[]) => ({
+    langList,
+    useGPU: ocrUseGpu(),
+    timeout: 120_000,
+    pipelineMode: "easyocr" as const,
+    magRatio: 1.5,
+    defaultRotationAngles: [90, 180, 270],
+    contrastRetry: true,
+    lowConfidenceThreshold: 0.45,
+    recognizerBatchSize: 4,
+  });
   const id = await loadModel({
     modelSrc: registrySrc(entry),
     modelType: "ocr",
-    modelConfig: {
-      langList: ocrLangList(),
-      useGPU: ocrUseGpu(),
-      timeout: 120_000,
-      pipelineMode: "easyocr",
-      magRatio: 1.5,
-      defaultRotationAngles: [90, 180, 270],
-      contrastRetry: true,
-      lowConfidenceThreshold: 0.45,
-      recognizerBatchSize: 4,
-    },
+    modelConfig: buildConfig(baseLangList),
     onProgress: onDownloadProgress("OCR"),
+  }).catch(async (err: unknown) => {
+    if (!isLangCompatibilityError(err)) throw err;
+    const fallbackLangList = suggestedLangListFromError(err);
+    if (!fallbackLangList) throw err;
+    console.warn(
+      "[extract] OCR langList fallback: retrying model load with SDK-suggested set:",
+      fallbackLangList.join(",")
+    );
+    return loadModel({
+      modelSrc: registrySrc(entry),
+      modelType: "ocr",
+      modelConfig: buildConfig(fallbackLangList),
+      onProgress: onDownloadProgress("OCR"),
+    });
   });
   ocrModelId = id;
   return id;
@@ -201,7 +259,7 @@ async function ensureLlm(): Promise<string> {
   const id = await loadModel({
     modelSrc: registrySrc(entry),
     modelType: "llm",
-    modelConfig: { ctx_size: 4096, temp: 0.2, predict: 2048 },
+    modelConfig: { ctx_size: 4096, temp: 0, predict: 2048 },
     onProgress: onDownloadProgress("LLM"),
   });
   llmModelId = id;
@@ -249,6 +307,8 @@ function parseJsonFromLlm(raw: string): unknown {
   const trimmed = raw.trim();
   const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   let body = (fence ? fence[1] : trimmed).trim();
+  // Common malformed JSON from small LLMs: `4,692.00` as a number token.
+  body = body.replace(/(-?\d{1,3}),(?=\d{3}(?:\.\d+)?\b)/g, "$1");
   const balanced = extractFirstBalancedJsonObject(body);
   if (balanced) body = balanced;
   else {
@@ -297,17 +357,39 @@ function sanitizeLineItems(raw: unknown): unknown {
   return out;
 }
 
+function sanitizeCategory(raw: unknown): string {
+  const t = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (!t) return "other";
+  if (["food", "transport", "retail", "services", "utilities", "healthcare", "other"].includes(t))
+    return t;
+  if (["goods", "shopping", "store", "shop", "product"].includes(t)) return "retail";
+  if (["medical", "pharmacy", "hospital"].includes(t)) return "healthcare";
+  if (["taxi", "bus", "train", "fuel", "gas"].includes(t)) return "transport";
+  if (["restaurant", "grocery", "supermarket", "cafe"].includes(t)) return "food";
+  return "other";
+}
+
+function sanitizeDate(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const s = raw.trim();
+  if (!s) return undefined;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const dmy = s.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
+  if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  return undefined;
+}
+
 function sanitizeExtractionCandidate(raw: unknown): unknown {
   if (!raw || typeof raw !== "object") return raw;
   const src = raw as Record<string, unknown>;
   const merchant = typeof src.merchant === "string" ? src.merchant.trim() : src.merchant;
   const total = asFiniteNumber(src.total) ?? src.total;
   const currency = typeof src.currency === "string" ? src.currency.trim() : src.currency;
-  const date = typeof src.date === "string" ? src.date.trim() : src.date;
+  const date = sanitizeDate(src.date);
   const notes = typeof src.notes === "string" ? src.notes.trim() : src.notes;
-  const confidence = asFiniteNumber(src.confidence) ?? src.confidence;
-  const category =
-    typeof src.category === "string" ? src.category.trim().toLowerCase() : src.category;
+  const confidence = asFiniteNumber(src.confidence) ?? 0.35;
+  const category = sanitizeCategory(src.category);
   const lineItems = sanitizeLineItems(src.lineItems);
   return {
     merchant,
@@ -437,11 +519,12 @@ export async function extractReceiptWithQvac(
           `Reply with JSON only. For "total", use the final payable amount in major currency units. ` +
           `If amounts use a comma as the decimal separator (e.g. 7,23), output the number with a dot (7.23). ` +
           `Treat currency symbols as markers, never as digits. ` +
+          `When RM or MYR appears, set currency to MYR. ` +
           `If a printed total looks like 8154.xx but the same cents appear as xxx.xx after a $ or on the total line, use the smaller xxx.xx amount. ` +
           `For "merchant", pick the clearest business name from the header, not footer noise.`,
       },
     ],
-    generationParams: { temp: 0.05, predict: 2048 },
+    generationParams: { temp: 0, predict: 2048 },
   });
   const raw = await text;
   let parsed: unknown;

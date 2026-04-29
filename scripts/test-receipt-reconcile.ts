@@ -42,11 +42,26 @@ UID:815400001294
 Auth code:BD81E623
 `.trim();
 
+const greekTotalPaid615Ocr = `
+MINI MARKET A.E.
+ΑΠΟΔΕΙΞΗ ΛΙΑΝΙΚΗΣ ΠΩΛΗΣΗΣ
+NET 5,30
+VAT 0,85
+GROSS 6,15
+TOTAL PAID 6,15
+Cash 6,15
+ΣΥΝΟΛΟ 6,15
+UID: 815400001294
+Auth code: 8D154AA2
+`.trim();
+
 // US: trust LLM when close to OCR
 assert.equal(shouldOcrOverrideLlmTotal(12.99, 12.99), false);
 assert.equal(shouldOcrOverrideLlmTotal(12.99, 13.1), false);
 // Greek hallucination vs slip
 assert.equal(shouldOcrOverrideLlmTotal(8154, 7.23), true);
+// Tiny hallucination vs OCR total should also override.
+assert.equal(shouldOcrOverrideLlmTotal(0.02, 33.9), true);
 
 let out = reconcileExtractedReceipt(
   x("e ir7 UA noise UID", 8154, "EUR"),
@@ -61,5 +76,19 @@ assert.ok(Math.abs(out.total - 47.82) < 0.01);
 out = reconcileExtractedReceipt(x("Bazaar", 8154, "USD"), greekSpacedTotalOcr);
 assert.ok(Math.abs(out.total - 7.23) < 0.01, `expected spaced OCR total 7.23, got ${out.total}`);
 assert.equal(out.currency, "EUR");
+
+out = reconcileExtractedReceipt(x("Mini Market", 8154, "USD"), greekTotalPaid615Ocr);
+assert.ok(Math.abs(out.total - 6.15) < 0.01, `expected total-paid OCR total 6.15, got ${out.total}`);
+assert.equal(out.currency, "EUR");
+
+const myrReceiptOcr = `
+ABC STORES SDN BHD
+Tax Invoice
+TOTAL RM 33.90
+Cash 40.00
+`.trim();
+out = reconcileExtractedReceipt(x("ABC", 0.02, "USD"), myrReceiptOcr);
+assert.equal(out.currency, "MYR");
+assert.ok(Math.abs(out.total - 33.9) < 0.01, `expected MYR total 33.9, got ${out.total}`);
 
 console.log("receipt reconcile tests: OK");

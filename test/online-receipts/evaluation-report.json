@@ -1,0 +1,262 @@
+{
+  "apiBase": "http://127.0.0.1:3847",
+  "tolerance": 0.05,
+  "generatedAt": "2026-04-29T10:07:01.538Z",
+  "summary": {
+    "totalSamples": 10,
+    "accurate": 3,
+    "partial": 2,
+    "failed": 5,
+    "successResponses": 10,
+    "nonOkResponses": 0
+  },
+  "results": [
+    {
+      "fileName": "sroie-001.jpg",
+      "sourceUrl": "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/001.jpg",
+      "status": "ok",
+      "httpStatus": 200,
+      "extraction": {
+        "merchant": "Indah GiFT & HOME Deco",
+        "total": 10,
+        "currency": "MYR",
+        "suggestedUsdtUsd": 2.5304
+      },
+      "expected": {
+        "total": 60.3,
+        "currency": "MYR"
+      },
+      "evaluation": {
+        "pass": false,
+        "totalMatch": false,
+        "currencyMatch": true
+      },
+      "notes": [
+        "Ground truth from SROIE key labels.",
+        "Total mismatch."
+      ]
+    },
+    {
+      "fileName": "sroie-002.jpg",
+      "sourceUrl": "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/002.jpg",
+      "status": "ok",
+      "httpStatus": 200,
+      "extraction": {
+        "merchant": "Tan Woon Yann",
+        "total": 50,
+        "currency": "MYR",
+        "suggestedUsdtUsd": 12.652
+      },
+      "expected": {
+        "total": 33.9,
+        "currency": "MYR"
+      },
+      "evaluation": {
+        "pass": false,
+        "totalMatch": false,
+        "currencyMatch": true
+      },
+      "notes": [
+        "Ground truth from SROIE key labels.",
+        "Total mismatch."
+      ]
+    },
+    {
+      "fileName": "sroie-003.jpg",
+      "sourceUrl": "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/003.jpg",
+      "status": "ok",
+      "httpStatus": 200,
+      "extraction": {
+        "merchant": "YONGFATT ENTERPRISE",
+        "total": 80.91,
+        "currency": "MYR",
+        "suggestedUsdtUsd": 20.473466
+      },
+      "expected": {
+        "total": 80.9,
+        "currency": "MYR"
+      },
+      "evaluation": {
+        "pass": true,
+        "totalMatch": true,
+        "currencyMatch": true
+      },
+      "notes": [
+        "Ground truth from SROIE key labels."
+      ]
+    },
+    {
+      "fileName": "sroie-004.jpg",
+      "sourceUrl": "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/004.jpg",
+      "status": "ok",
+      "httpStatus": 200,
+      "extraction": {
+        "merchant": "Tan Woon Yann",
+        "total": 30.91,
+        "currency": "MYR",
+        "suggestedUsdtUsd": 7.821466
+      },
+      "expected": {
+        "total": 30.9,
+        "currency": "MYR"
+      },
+      "evaluation": {
+        "pass": true,
+        "totalMatch": true,
+        "currencyMatch": true
+      },
+      "notes": [
+        "Ground truth from SROIE key labels."
+      ]
+    },
+    {
+      "fileName": "sroie-005.jpg",
+      "sourceUrl": "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/005.jpg",
+      "status": "ok",
+      "httpStatus": 200,
+      "extraction": {
+        "merchant": "ABC HO TRADING",
+        "total": 15.5,
+        "currency": "MYR",
+        "suggestedUsdtUsd": 3.92212
+      },
+      "expected": {
+        "total": 31,
+        "currency": "MYR"
+      },
+      "evaluation": {
+        "pass": false,
+        "totalMatch": false,
+        "currencyMatch": true
+      },
+      "notes": [
+        "Ground truth from SROIE key labels.",
+        "Total mismatch."
+      ]
+    },
+    {
+      "fileName": "sroie-006.jpg",
+      "sourceUrl": "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/006.jpg",
+      "status": "ok",
+      "httpStatus": 200,
+      "extraction": {
+        "merchant": "SOON HUAT MACHINERY ENTERPRISE",
+        "total": 327,
+        "currency": "MYR",
+        "suggestedUsdtUsd": 82.74408
+      },
+      "expected": {
+        "total": 327,
+        "currency": "MYR"
+      },
+      "evaluation": {
+        "pass": true,
+        "totalMatch": true,
+        "currencyMatch": true
+      },
+      "notes": [
+        "Ground truth from SROIE key labels."
+      ]
+    },
+    {
+      "fileName": "sroie-007.jpg",
+      "sourceUrl": "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/007.jpg",
+      "status": "ok",
+      "httpStatus": 200,
+      "extraction": {
+        "merchant": "Tan Chay Yee HOLOH",
+        "total": 0.2,
+        "currency": "MYR",
+        "suggestedUsdtUsd": 0.050608
+      },
+      "expected": {
+        "total": 20,
+        "currency": "MYR"
+      },
+      "evaluation": {
+        "pass": false,
+        "totalMatch": false,
+        "currencyMatch": true
+      },
+      "notes": [
+        "Ground truth from SROIE key labels.",
+        "Total mismatch."
+      ]
+    },
+    {
+      "fileName": "sroie-008.jpg",
+      "sourceUrl": "https://raw.githubusercontent.com/zzzDavid/ICDAR-2019-SROIE/refs/heads/master/data/img/008.jpg",
+      "status": "ok",
+      "httpStatus": 200,
+      "extraction": {
+        "merchant": "GOGIANT ENGINEERING (M) SDN BHD",
+        "total": 6.37,
+        "currency": "MYR",
+        "suggestedUsdtUsd": 1.611865
+      },
+      "expected": {
+        "total": 112.45,
+        "currency": "MYR"
+      },
+      "evaluation": {
+        "pass": false,
+        "totalMatch": false,
+        "currencyMatch": true
+      },
+      "notes": [
+        "Ground truth from SROIE key labels.",
+        "Total mismatch."
+      ]
+    },
+    {
+      "fileName": "invoice-barlow.png",
+      "sourceUrl": "https://raw.githubusercontent.com/louiskounios/simple-invoice-generator/master/examples/Barlow.png",
+      "status": "ok",
+      "httpStatus": 200,
+      "extraction": {
+        "merchant": "Bertram Gilfoyle",
+        "total": 0.2,
+        "currency": "MYR",
+        "suggestedUsdtUsd": 0.050608
+      },
+      "expected": {
+        "total": null,
+        "currency": null
+      },
+      "evaluation": {
+        "pass": null,
+        "totalMatch": null,
+        "currencyMatch": null
+      },
+      "notes": [
+        "No machine-readable ground-truth label found; best-effort visual comparison only.",
+        "Expected total/currency unavailable, marked as partial."
+      ]
+    },
+    {
+      "fileName": "invoice-sarabun.png",
+      "sourceUrl": "https://raw.githubusercontent.com/louiskounios/simple-invoice-generator/master/examples/Sarabun.png",
+      "status": "ok",
+      "httpStatus": 200,
+      "extraction": {
+        "merchant": "Bank For Your Buck",
+        "total": 0.2,
+        "currency": "MYR",
+        "suggestedUsdtUsd": 0.050608
+      },
+      "expected": {
+        "total": null,
+        "currency": null
+      },
+      "evaluation": {
+        "pass": null,
+        "totalMatch": null,
+        "currencyMatch": null
+      },
+      "notes": [
+        "No machine-readable ground-truth label found; best-effort visual comparison only.",
+        "Expected total/currency unavailable, marked as partial."
+      ]
+    }
+  ]
+}
