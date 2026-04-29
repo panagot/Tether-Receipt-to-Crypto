@@ -19,6 +19,8 @@ const TOTAL_PAID_OR_TENDER_LABEL =
 /** Line clearly about basket total (amount often on same or next line). */
 const SYNOLO_CLASS_LINE =
   /ΣΥΝΟΛΟ|ΜΕΡΙΚΟ\s+ΣΥΝΟΛΟ|SYNOLO|ZYNOAO|MEPIKO\s+ZYNOAO|SUBTOTAL|GRAND\s+TOTAL|^\s*TOTAL\b|合計|总计|应付|ИТОГО|СУММА|합계|Gesamt|TTC\b/i;
+const TOTAL_ANCHOR_IN_LINE =
+  /MEPIKO\s+ZYNOAO|ΜΕΡΙΚΟ\s+ΣΥΝΟΛΟ|ΣΥΝΟΛΟ|SYNOLO|ZYNOAO|TOTAL\s*PAID|GRAND\s+TOTAL|TOTAL\s*DUE|RECEIPT\s+TOTAL|INVOICE\s+TOTAL|^\s*TOTAL\b/i;
 
 /**
  * Conservative: replace LLM total with OCR candidate only when they clearly disagree.
@@ -59,7 +61,8 @@ function parseAmountCandidatesFromLine(line: string, opts?: { allowInteger?: boo
     const v = Math.round(parseFloat(`${m[1]}.${m[3]}`) * 100) / 100;
     if (Number.isFinite(v) && v > 0 && v < 250_000) out.add(v);
   }
-  const reSpaced = /(-?\d{1,7})\s+(\d{2})\b/g;
+  // Guard spaced-decimal parsing so fragments like "3,99 13" do not become fake 99.13 amounts.
+  const reSpaced = /(?<![\d.,])(-?\d{1,7})\s+(\d{2})\b/g;
   while ((m = reSpaced.exec(normalized)) !== null) {
     const v = Math.round(parseFloat(`${m[1]}.${m[2]}`) * 100) / 100;
     if (Number.isFinite(v) && v > 0 && v < 250_000) out.add(v);
@@ -72,6 +75,17 @@ function parseAmountCandidatesFromLine(line: string, opts?: { allowInteger?: boo
       if (n >= 1900 && n <= 2099) continue;
       out.add(n);
     }
+  }
+  return [...out];
+}
+
+function parsePercentCandidatesFromLine(line: string): number[] {
+  const out = new Set<number>();
+  const re = /(\d{1,2}(?:[.,]\d{1,2})?)\s*%/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line)) !== null) {
+    const v = parseFloat(m[1].replace(",", "."));
+    if (Number.isFinite(v) && v > 0 && v <= 30) out.add(v);
   }
   return [...out];
 }
@@ -150,6 +164,35 @@ function looksLikeFooterNoiseLine(line: string): boolean {
   );
 }
 
+function looksLikeTaxPercentLine(line: string): boolean {
+  return /\b(tax|vat|gst|sst|service\s*tax)\b/i.test(line) && /%/.test(line);
+}
+
+function hasCashOrChangeTokens(line: string): boolean {
+  return /METPHTA|PEZTA|\bCASH\b|\bCHANGE\b|\bTENDER\b|ΡΕΣΤΑ|ΜΕΤΡΗΤΑ/i.test(line);
+}
+
+function deriveTotalFromCashAndChange(ocrText: string): number | null {
+  const lines = ocrText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    if (!hasCashOrChangeTokens(line)) continue;
+    const amounts = parseAmountCandidatesFromLine(line, { allowInteger: false });
+    if (amounts.length < 2) continue;
+    let best: number | null = null;
+    for (const paid of amounts) {
+      for (const change of amounts) {
+        if (!Number.isFinite(paid) || !Number.isFinite(change) || paid <= change) continue;
+        const candidate = Math.round((paid - change) * 100) / 100;
+        if (candidate <= 0 || candidate >= 250_000) continue;
+        const seenAsAmount = amounts.some((v) => Math.abs(v - candidate) < 0.011);
+        if (seenAsAmount && (best == null || candidate > best)) best = candidate;
+      }
+    }
+    if (best != null) return best;
+  }
+  return null;
+}
+
 function pickBestTotalCandidate(
   lines: string[]
 ): { amount: number; labelLine: string } | null {
@@ -162,7 +205,13 @@ function pickBestTotalCandidate(
     if (!strong && !totalish) continue;
 
     const baseScore = strong ? 7 : 4;
-    for (const amount of parseAmountCandidatesFromLine(line, { allowInteger: strong })) {
+    const anchorIdx = totalish ? line.search(TOTAL_ANCHOR_IN_LINE) : -1;
+    const anchoredLine = anchorIdx > 0 ? line.slice(anchorIdx) : line;
+    let lineAmounts = parseAmountCandidatesFromLine(anchoredLine, { allowInteger: strong });
+    if (!strong && totalish && hasCashOrChangeTokens(line) && lineAmounts.length > 1) {
+      lineAmounts = [lineAmounts[0]];
+    }
+    for (const amount of lineAmounts) {
       scored.push({ amount, score: baseScore + 2, labelLine: line });
     }
 
@@ -212,7 +261,7 @@ function pickBestTotalCandidate(
       best = candidate;
       continue;
     }
-    if (candidate.score === best.score && candidate.count === best.count && candidate.amount < best.amount) {
+    if (candidate.score === best.score && candidate.count === best.count && candidate.amount > best.amount) {
       best = candidate;
     }
   }
@@ -277,6 +326,64 @@ function pickFallbackAmountCandidate(ocrText: string): { amount: number; labelLi
     if (!best || c.score > best.score || (c.score === best.score && c.count > best.count)) best = c;
   }
   return best && best.score >= 1.6 ? { amount: best.amount, labelLine: best.labelLine } : null;
+}
+
+function bestTaxSynthesizedUsdTotal(ocrText: string): number | null {
+  const lines = ocrText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  let subtotal: number | null = null;
+  let taxRate: number | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (subtotal == null && /\bsubtotal\b/i.test(line)) {
+      const window = [line, lines[i + 1] ?? "", lines[i + 2] ?? ""];
+      for (const w of window) {
+        const amounts = parseAmountCandidatesFromLine(w);
+        if (amounts.length) {
+          subtotal = amounts[amounts.length - 1] ?? null;
+          break;
+        }
+      }
+    }
+    if (taxRate == null && /\btax\b/i.test(line) && /%/.test(line)) {
+      const window = [line, lines[i + 1] ?? ""];
+      for (const w of window) {
+        const rates = parsePercentCandidatesFromLine(w);
+        if (rates.length) {
+          taxRate = rates[0] ?? null;
+          break;
+        }
+      }
+    }
+    if (subtotal != null && taxRate != null) break;
+  }
+  if (subtotal == null || taxRate == null || subtotal <= 0) return null;
+  const gross = Math.round(subtotal * (1 + taxRate / 100) * 100) / 100;
+  if (!Number.isFinite(gross) || gross <= 0 || gross >= 250_000) return null;
+  return gross;
+}
+
+function mergedLeadingEightTotalCandidate(ocrText: string): number | null {
+  const lines = ocrText.split(/\r?\n/).map((l) => l.trim());
+  let merged: number | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || !TOTAL_LINE_HINT.test(line)) continue;
+    for (let j = i; j < Math.min(lines.length, i + 3); j++) {
+      for (const amount of parseAmountCandidatesFromLine(lines[j] ?? "")) {
+        if (amount < 1_000) continue;
+        const asFixed = amount.toFixed(2);
+        if (!asFixed.startsWith("8")) continue;
+        const alt = parseFloat(asFixed.slice(1));
+        if (Number.isFinite(alt) && alt > 0 && alt < 250_000) merged = alt;
+      }
+    }
+    if (merged != null) break;
+  }
+  if (merged == null) return null;
+  const taxSynth = bestTaxSynthesizedUsdTotal(ocrText);
+  if (taxSynth != null && Math.abs(taxSynth - merged) < 0.02) return merged;
+  if (/\bsubtotal\b/i.test(ocrText) && /\btax\b/i.test(ocrText)) return merged;
+  return null;
 }
 
 function pickMerchantFromOcr(ocrText: string): string | null {
@@ -354,17 +461,50 @@ function fixTotalFromEuAndSynoloOcr(
       labelLine = fallback.labelLine;
     }
   }
+  if (candidate == null) {
+    const cashMinusChange = deriveTotalFromCashAndChange(scopedOcrText);
+    if (cashMinusChange != null) {
+      candidate = cashMinusChange;
+      labelLine = "cash/change reconciliation";
+    }
+  }
+  if (candidate != null) {
+    const cashMinusChange = deriveTotalFromCashAndChange(scopedOcrText);
+    if (
+      cashMinusChange != null &&
+      cashMinusChange > candidate &&
+      shouldOcrOverrideLlmTotal(candidate, cashMinusChange)
+    ) {
+      candidate = cashMinusChange;
+      labelLine = "cash/change reconciliation";
+    }
+  }
 
   if (candidate == null) return extraction;
 
   const t = extraction.total;
   if (!Number.isFinite(t) || t <= 0) return extraction;
+  const mergedHint = mergedLeadingEightTotalCandidate(scopedOcrText);
+  if (mergedHint != null && Math.abs(mergedHint - t) < 0.01 && candidate < t * 0.8) return extraction;
+  if (candidate < t * 0.8 && looksLikeTaxPercentLine(labelLine)) return extraction;
 
   if (!shouldOcrOverrideLlmTotal(t, candidate)) return extraction;
 
   let currency = extraction.currency;
-  if (ocrLooksEuro(scopedOcrText, labelLine) && extraction.currency === "USD") currency = "EUR";
-  if (/(ΣΥΝΟΛΟ|ΜΕΡΙΚΟ|ΕΥΡΩ|EUR|€)/i.test(scopedOcrText) && extraction.currency === "USD") currency = "EUR";
+  if (
+    ocrLooksEuro(scopedOcrText, labelLine) &&
+    extraction.currency !== "EUR" &&
+    !hasExplicitCurrencyEvidence(extraction.currency, scopedOcrText)
+  ) {
+    currency = "EUR";
+  }
+  if (
+    /(ΣΥΝΟΛΟ|ΜΕΡΙΚΟ|ΕΥΡΩ|EUR|€)/i.test(scopedOcrText) &&
+    extraction.currency !== "EUR" &&
+    !hasExplicitCurrencyEvidence(extraction.currency, scopedOcrText)
+  ) {
+    currency = "EUR";
+  }
 
   console.log("[extract] total correction:", t, "→", candidate, "(OCR total vs LLM; conservative gate)");
   return { ...extraction, total: candidate, currency };
@@ -379,7 +519,7 @@ const CURRENCY_HINTS: Array<{ currency: string; re: RegExp; weight: number }> = 
   { currency: "KRW", re: /\bKRW\b|₩/i, weight: 3 },
   { currency: "INR", re: /\bINR\b|₹/i, weight: 3 },
   { currency: "THB", re: /\bTHB\b|฿/i, weight: 3 },
-  { currency: "USD", re: /\bUSD\b|\$\s*\d/i, weight: 2 },
+  { currency: "USD", re: /\bUSD\b|\$\s*\d|\bSALES\s+TAX\b|\bNEW\s+YORK\b/i, weight: 3 },
 ];
 
 function inferCurrencyFromOcr(ocrText: string): string | null {
@@ -395,12 +535,48 @@ function inferCurrencyFromOcr(ocrText: string): string | null {
   return best && best.score >= 3 ? best.currency : null;
 }
 
+function hasExplicitCurrencyEvidence(currency: string, ocrText: string): boolean {
+  switch (currency) {
+    case "MYR":
+      return /\bMYR\b|\bRINGGIT\b|(?:^|[^A-Z])RM\s*\d/i.test(ocrText);
+    case "EUR":
+      return /€|\bEUR\b/i.test(ocrText);
+    case "GBP":
+      return /£|\bGBP\b/i.test(ocrText);
+    case "JPY":
+      return /¥|\bJPY\b|円/i.test(ocrText);
+    case "CNY":
+      return /\bCNY\b|\bRMB\b|￥|人民币/i.test(ocrText);
+    case "USD":
+      return /\bUSD\b|\$\s*\d/i.test(ocrText);
+    default:
+      return false;
+  }
+}
+
 function refineCurrencyField(extraction: ReceiptExtraction, ocrText: string): ReceiptExtraction {
   const inferred = inferCurrencyFromOcr(ocrText);
   if (!inferred || inferred === extraction.currency) return extraction;
-  if (extraction.currency !== "USD") return extraction;
+  const explicitCurrent = hasExplicitCurrencyEvidence(extraction.currency, ocrText);
+  const explicitInferred = hasExplicitCurrencyEvidence(inferred, ocrText);
+  if (explicitCurrent && !explicitInferred) return extraction;
+  if (extraction.currency !== "USD" && inferred !== "USD" && !explicitInferred) return extraction;
   console.log("[extract] currency correction:", extraction.currency, "→", inferred, "(OCR evidence)");
   return { ...extraction, currency: inferred };
+}
+
+function applyGreekEuroCurrencyGuardrail(extraction: ReceiptExtraction, ocrText: string): ReceiptExtraction {
+  if (extraction.currency === "EUR") return extraction;
+  const hasMyrEvidence = hasExplicitCurrencyEvidence("MYR", ocrText);
+  if (hasMyrEvidence) return extraction;
+  const hasGreekScript = /[\u0370-\u03FF]/.test(ocrText);
+  const hasEuroContext =
+    /ΣΥΝΟΛ|ΜΕΡΙΚΟ|ΑΠΟΔΕΙΞ|ΛΙΑΝΙΚ|ΤΑΜΕΙΟ|TEMAXIA|TEVAXIA|ZYNOA|ZYNON|SYNOL|OYIDJ|PEZTA|€|\bEUR\b/i.test(
+      ocrText
+    );
+  if (!hasGreekScript && !hasEuroContext) return extraction;
+  console.log("[extract] currency correction:", extraction.currency, "→ EUR", "(Greek/EU OCR guardrail)");
+  return { ...extraction, currency: "EUR" };
 }
 
 function bestMyrTaggedAmount(ocrText: string): number | null {
@@ -432,6 +608,14 @@ function fixTotalFromMyrTaggedAmounts(extraction: ReceiptExtraction, ocrText: st
   if (!candidate) return extraction;
   if (!shouldOcrOverrideLlmTotal(extraction.total, candidate)) return extraction;
   console.log("[extract] total correction:", extraction.total, "→", candidate, "(RM-tagged OCR amount)");
+  return { ...extraction, total: candidate };
+}
+
+function fixTotalFromCashChangeMath(extraction: ReceiptExtraction, ocrText: string): ReceiptExtraction {
+  const candidate = deriveTotalFromCashAndChange(ocrText);
+  if (candidate == null) return extraction;
+  if (!shouldOcrOverrideLlmTotal(extraction.total, candidate)) return extraction;
+  console.log("[extract] total correction:", extraction.total, "→", candidate, "(cash minus change OCR math)");
   return { ...extraction, total: candidate };
 }
 
@@ -551,8 +735,20 @@ export function reconcileExtractedReceipt(
 ): ReceiptExtraction {
   let out = refineMerchantField(extraction, ocrText);
   out = refineCurrencyField(out, ocrText);
+  out = applyGreekEuroCurrencyGuardrail(out, ocrText);
+  const mergedCandidate = mergedLeadingEightTotalCandidate(ocrText);
+  if (
+    mergedCandidate != null &&
+    Number.isFinite(out.total) &&
+    out.total > 0 &&
+    shouldOcrOverrideLlmTotal(out.total, mergedCandidate)
+  ) {
+    console.log("[extract] total correction:", out.total, "→", mergedCandidate, "(merged leading-8 total on receipt line)");
+    out = { ...out, total: mergedCandidate };
+  }
   out = fixTotalFromEuAndSynoloOcr(out, ocrText);
   out = fixTotalFromMyrTaggedAmounts(out, ocrText);
+  out = fixTotalFromCashChangeMath(out, ocrText);
   out = fixTotalIfDollarSignMisreadAsEight(out, ocrText);
   return out;
 }
