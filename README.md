@@ -1,134 +1,192 @@
-# Receipt to Crypto
+# Tether | Receipt to Crypto
 
-**QVAC** (local OCR + small LLM) turns a receipt image into editable fields (merchant, total, category). **Tether WDK** optionally sends **USDT** on Solana after you confirm the recipient and amount.
+> **Scan any receipt or POS screen → extract the total locally with QVAC → settle in USDT on Solana.**
 
-## For judges (demo checklist)
+A QVAC-first app that turns multilingual receipts and POS screens into **settlement-ready USDT amounts**. OCR, structured extraction, and embeddings run **on-device via QVAC**; on-chain settlement is optional and uses **Tether WDK** on Solana.
 
-1. **Environment** — Node **≥ 22.17**, pills in the header: cluster (e.g. Devnet), Local QVAC, wallet ready/off. Extraction runs QVAC on your receipt image (GPU/Vulkan on Windows when available).
-2. **Upload** — Drop or select a JPEG/PNG/WebP receipt → **Run extraction** (or **Ctrl+Enter** / **⌘+Enter** with a file selected).
-3. **Review** — Preview + raw OCR; totals are inferred locally — verify before paying.
-4. **Fields** — Edit any value; USDT base units follow the fiat total when you change it.
-5. **Settlement** — Receipts do not contain a Solana address. Use **Scan Receive QR** (camera or image) or paste a base58 / `solana:…` link. Optional **Use signer wallet** for a devnet self-send smoke test. Confirm checkbox → **Send USDT** → Explorer link.
-6. **Receipt search** — After each extract, the API indexes the receipt text with **QVAC embeddings** (first search may download a small embedding model). Use **Receipt search** for natural-language lookup over past scans (data in `.rtc-data/` on the API host).
+- **Live demo:** https://tether-receipt-to-crypto.vercel.app/
+- **Source:** https://github.com/panagot/Tether-Receipt-to-Crypto
+- **Walkthrough video (Loom):** https://www.loom.com/share/aceffa7ceb064a2ba63f56959c2e213c
 
-**Architecture:** Vite UI + Express API on your machine. Receipt bytes hit the **local** API; QVAC runs **OCR**, **LLM JSON extraction**, and optional **embedding** for search — no cloud inference for those steps. Configure `WALLET_SEED` + `USDT_MINT` for `/api/pay`. On **Vercel**, the repo includes **plain Node `api/**/*.js` proxies** (see `api/`) that forward to **`RTC_API_PROXY_TARGET`** so the browser can keep same-origin `/api` without rebaking `VITE_API_BASE_URL` when your tunnel URL changes. For very long extractions, prefer **`VITE_API_BASE_URL`** (browser → tunnel directly) or a paid Vercel function duration tier, because the proxy is capped by Vercel’s function timeout (e.g. 60s on Hobby).
+---
 
-## QVAC Integration Depth (sidetrack rubric)
+## What it does (60-second tour)
 
-- **Primary path:** `@qvac/ocr-onnx` for receipt OCR + `@qvac/llm-llamacpp` for strict JSON extraction (`merchant`, `total`, `currency`, optional `date`/`lineItems`, `category`, `confidence`).
-- **Second capability:** `@qvac/embed-llamacpp` indexes extracted receipts for local semantic search (`/api/receipts/index`, `/api/receipts/search`).
-- **Human-in-the-loop guardrail:** no chain action is sent automatically; user must explicitly confirm recipient + amount before pressing **Send USDT**.
+1. **Scan** a receipt with your phone camera or upload an image (any language).
+2. **Extract locally with QVAC** — receipt OCR + structured JSON (`merchant`, `total`, `currency`, `category`, `confidence`).
+3. **Review** fields. Edit anything before doing anything on-chain.
+4. **FX → USDT hint** — we convert the receipt total into a transparent USD/USDT amount with the FX **source labelled** (`env` / `frankfurter` / `fallback` / `unmapped`).
+5. **Optional settlement** — if you provide a Solana recipient + a configured wallet, send **USDT** with **Tether WDK**.
+6. **Receipt memory** — every successful extraction is locally embedded with QVAC for **semantic search** over your scans.
 
-### Vulkan / VRAM / target notes
+> The extraction step never sends your receipt image to a cloud LLM. QVAC runs the OCR + LLM JSON extraction + embedding **on the host machine running the API**.
 
-- **Desktop target (recommended):** Windows laptop/desktop with Vulkan-capable GPU for faster first-run model load and lower extraction latency.
-- **VRAM guidance:** larger OCR language sets and LLM context consume more memory; if GPU memory is tight, narrow OCR languages with `QVAC_OCR_LANG_LIST=en` (or small list).
-- **CPU fallback:** set `QVAC_USE_GPU=false` to run OCR without GPU. It works but first extraction and retries are slower.
-- **Mobile target:** browser capture is mobile-friendly, but QVAC inference runs on the backend host (your own machine/server), not inside the phone browser.
+---
 
-## Requirements
+## Why this matters (judge view)
 
-- Node.js **≥ 22.17**
-- Windows: Vulkan-capable GPU for QVAC (first run may download models)
+- **Real cross-border pain** — freelancers, remote teams, DAO ops, and small merchants already deal with multilingual receipts and stablecoin settlement. They retype totals, guess FX, and make mistakes.
+- **QVAC, not a wrapper** — OCR, structured extraction, and embeddings are all genuine local QVAC capabilities used in the actual user flow.
+- **Honest UX** — confidence score, FX source label, and an explicit human-in-the-loop review step. No surprise on-chain action.
+- **Tether-native output** — totals are translated into a USDT amount + base units, ready for a real Solana transfer with Tether WDK.
 
-## Setup
+---
+
+## Submission summary
+
+| | |
+|---|---|
+| Project Title | Tether \| Receipt to Crypto |
+| One-liner | *Scan receipts, extract locally with QVAC, settle in USDT on Solana when you’re ready.* |
+| Track | Tether **Frontier sidetrack** |
+| QVAC capabilities used | **OCR**, **LLM extraction**, **embeddings** (local search) |
+| Tether stack used | **USDT** on Solana via **Tether WDK** |
+
+---
+
+## Architecture (at a glance)
+
+- **Frontend:** Vite + React (TypeScript). Camera capture, auto-scan progress, review UI, settlement form, embeddings search.
+- **Backend (local):** Node + Express + TypeScript. Calls QVAC for OCR / LLM JSON / embeddings. Optional WDK-based USDT transfer.
+- **Hosting:** UI on Vercel; QVAC runs on the host where the API is started (your laptop or a server). Vercel `api/*` is a thin proxy to a single env var (`RTC_API_PROXY_TARGET`) so the tunnel URL can change without rebuilds.
+
+```
+Browser ──▶ /api/* (Vercel proxy) ──▶ HTTPS tunnel ──▶ Node API ──▶ QVAC (OCR / LLM / embed)
+                                                              │
+                                                              └──▶ Tether WDK (Solana, on user confirm)
+```
+
+---
+
+## QVAC integration depth
+
+- **OCR** — `@qvac/sdk` model registry → ONNX OCR for multilingual receipt reading. Adaptive language list and a fallback OCR pass with image enhancement when signal is low.
+- **LLM extraction** — small local LLM (Llama-3.2-1B class) prompted to return strict JSON: `merchant`, `total`, `currency`, `category`, `confidence`, optional `notes`/`date`/`lineItems`. Output goes through schema validation (`zod`) and a deterministic reconciliation layer that fixes common OCR/LLM artefacts (Greek/EU comma decimals, footer/auth-code contamination, currency symbol confusion, leading-`8` from `$` misreads, etc.).
+- **Embeddings** — successful extractions are embedded locally and stored in `.rtc-data/`. The Receipt Search panel runs cosine search on those embeddings — entirely on your machine.
+- **Reliability features** — registry-lock retry, OCR signal scoring, multi-pass OCR, sanitized language list, schema-safe normalization, structured timing/lang/confidence diagnostics under `RTC_EXTRACT_DEBUG=1`.
+
+No cloud LLM is ever called for extraction.
+
+---
+
+## USDT / Tether integration
+
+- Once a receipt is parsed, the API returns:
+  - `extraction` (validated structured fields),
+  - `suggestedAmountBaseUnits` (USDT base units, 6 decimals),
+  - `suggestedUsdtUsd` (USD notional),
+  - `settlementFx` (with `source` label).
+- `/api/pay` uses **Tether WDK** to sign a USDT SPL transfer on Solana. The user must explicitly check a confirmation box and click **Send USDT**.
+- Devnet is the default; configure `WALLET_SEED` + `USDT_MINT` to enable signing.
+
+---
+
+## Run it locally (Windows / macOS / Linux)
+
+Requirements: **Node ≥ 22.17**. On Windows, a Vulkan-capable GPU helps QVAC.
 
 ```bash
+git clone https://github.com/panagot/Tether-Receipt-to-Crypto
+cd Tether-Receipt-to-Crypto/receipt-to-crypto
+
 cp .env.example .env
-# Edit .env: WALLET_SEED, USDT_MINT for devnet pay tests
 npm install
 npm run dev
 ```
 
-- UI: http://127.0.0.1:5173  
-- API: http://127.0.0.1:3847/api/health  
+Then open:
 
-## Scripts
+- UI: http://localhost:5173 (or 5174 if 5173 is busy)
+- API health: http://127.0.0.1:3847/api/health
 
-- `npm run dev` — API + Vite together  
-- `npm run dev:server` / `npm run dev:client` — separately  
-- `npm run build` — typecheck server + build client  
-- `npm start` — production API (serve `client/dist` if `NODE_ENV=production` and built)
-- `npm run verify:backend` — `GET /api/health` only (fast). Default base `http://127.0.0.1:3847` or `RTC_API_BASE` / first CLI arg if it is an `http(s)://` URL.
-- `npm run verify:backend -- https://tunnel.example` — health against a tunnel.
-- `npm run verify:backend -- test/fixtures/tiny-receipt.jpg` — health + `POST /api/extract` on the bundled tiny JPEG (can take minutes while QVAC loads models; override timeout with `RTC_EXTRACT_TIMEOUT_MS`).
-- `npm run verify:backend:extract` — same as the single-arg fixture command above.
-- `npm run test:unit` — no server: `apiBase` / `apiJson` contract tests + receipt fixture magic-bytes check.
-- `npm run test:all` — `build` + `test:unit` + `verify:backend` (start the API first, or health step fails).
-- `npm run gen:fixture:tiny-receipt` — regenerate `test/fixtures/tiny-receipt.jpg` if needed.
+First extraction can take a while because QVAC may download models — that’s a one-time cost.
 
-Run `verify:backend` (and optionally `verify:backend:extract`) before testing **Scan with smartphone** against a tunnel.
+---
 
-**Vercel env copy-paste:** run **`npm run vercel:env-snippet`** (API must be up on **3847**). It tries, in order: **`RTC_PUBLIC_API_URL`** / **`RTC_API_PROXY_TARGET`** if you already set them; **ngrok** (`http://127.0.0.1:4040/api/tunnels`); then starts a **Cloudflare quick tunnel** (`cloudflared tunnel --url http://127.0.0.1:3847`) and prints **Key** + **Value** for `RTC_API_PROXY_TARGET`. Install Cloudflare Tunnel with **`winget install Cloudflare.cloudflared`** if needed. You still paste into the Vercel dashboard. Press **Ctrl+C** when the script is holding a quick tunnel open.
+## Useful scripts
 
-## API (local)
+| Script | What it does |
+|---|---|
+| `npm run dev` | API + Vite together (recommended) |
+| `npm run dev:server` / `npm run dev:client` | Start API or UI separately |
+| `npm run build` | Type-check server + production build the client |
+| `npm start` | Production API; serves `client/dist` if built |
+| `npm run verify:backend` | Hit `/api/health` against a local or tunnel URL |
+| `npm run verify:backend:extract` | Health + extract on the bundled tiny fixture |
+| `npm run test:unit` | Fast unit checks (no server) |
+| `npm run test:reconcile` | Receipt reconciliation regressions (Greek/EU/MYR/etc.) |
+| `npm run test:all` | `build` + `test:unit` + `verify:backend` |
+| `npm run vercel:env-snippet` | Print/refresh `RTC_API_PROXY_TARGET` value via Cloudflare quick tunnel |
+
+---
+
+## API surface
 
 | Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/api/health` | Cluster, wallet readiness, **`payerAddress`** (signer pubkey when configured) |
-| POST | `/api/extract` | multipart `receipt` → QVAC OCR + LLM |
+|---|---|---|
+| GET | `/api/health` | Cluster, wallet readiness, signer pubkey |
+| POST | `/api/extract` | multipart `receipt` → QVAC OCR + LLM + reconciled JSON |
+| POST | `/api/extract-pos` | multipart `pos` → POS screen amount/currency extraction |
 | POST | `/api/pay` | JSON `{ recipient, amountBaseUnits, memo? }` → WDK USDT transfer |
-| POST | `/api/receipts/index` | JSON `{ merchant, total, category, ocrText }` → QVAC embed + save under `.rtc-data/` |
-| POST | `/api/receipts/search` | JSON `{ query, limit? }` → cosine-ranked receipt hits |
+| POST | `/api/receipts/index` | JSON `{ merchant, total, category, ocrText }` → embed + save |
+| POST | `/api/receipts/search` | JSON `{ query, limit? }` → ranked receipt hits |
 
-### Extraction schema (strict)
-
-`/api/extract` returns `extraction` with this strict shape:
+`extraction` shape returned by `/api/extract`:
 
 - `merchant`: string
 - `total`: number
-- `currency`: ISO 4217 code
+- `currency`: ISO 4217 code (auto-normalized; `EURO` → `EUR`, etc.)
 - `date` (optional): `YYYY-MM-DD`
-- `lineItems` (optional): array of `{ description, quantity?, unitPrice?, total? }`
-- `category`: one of `food | transport | retail | services | utilities | healthcare | other`
-- `confidence`: number `0..1`
-- `notes` (optional): string
+- `lineItems` (optional)
+- `category`: `food | transport | retail | services | utilities | healthcare | other`
+- `confidence`: 0..1
+- `notes` (optional)
 
-**Embedding model issues:** Receipt search skips non-`.gguf` registry entries (e.g. stray `*.tensors.txt`) and tries several GGUFs in order. Override with `RTC_EMBEDDING_REGISTRY_PATH` set to a **registry path string** that matches `ModelRegistryEntry.registryPath` (see QVAC registry). If a download is corrupt, delete the broken folder under `~/.qvac/models/` and retry.
+---
 
-## Frontier + Earn submission checklist
+## Hosting on Vercel
 
-- Keep one **public GitHub repo** for the complete app and deployment notes.
-- Include one **working demo video** that shows offline extraction first, then optional network/signing.
-- Ensure README is reproducible: exact setup, model/runtime notes, and GPU/Vulkan constraints.
-- Submit both:
-  - **Colosseum Frontier** project submission (before sponsor deadline).
-  - **Superteam Earn Tether Frontier sidetrack** listing submission with same repo + video links.
+The repo ships a thin Vercel proxy under `api/`. The browser keeps calling **same-origin** `/api/*`, and Vercel forwards allowlisted routes to a single env var:
 
-## Demo script (offline-first)
+1. Run the API anywhere reachable over **HTTPS** (Cloudflare quick tunnel, ngrok, or a real host).
+2. In **Project → Settings → Environment Variables**, add:
 
-1. Start app normally and confirm API health.
-2. Enable airplane mode (or disconnect internet) on the demo device.
-3. Capture/upload receipt and run extraction; show OCR + structured JSON fields and confidence.
-4. Edit/confirm fields manually (human-in-the-loop step).
-5. Re-enable network only for optional sync/search refresh or WDK signature broadcast.
-6. Execute one explicit **Send USDT** action after confirmation checkbox is checked.
+   ```
+   RTC_API_PROXY_TARGET=https://your-api-origin.example
+   ```
 
-## Vercel
+   Origin only. **No** trailing slash. **Do not** append `/api`.
+3. **Redeploy.**
 
-Import this repo in [Vercel](https://vercel.com): build runs `npm run build`, static UI is `client/dist`, and **serverless routes** live under `api/` (see [`vercel.json`](vercel.json)). **Root Directory** in Vercel must be the **repository root** (where `vercel.json` and `api/` live), not `client/` — otherwise `/api/*` never deploys and health stays broken.
+When the tunnel URL changes, just update that env var — no client rebuild required.
 
-### Recommended: `RTC_API_PROXY_TARGET` (server env, survives tunnel URL changes)
+If `/api/health` is unreachable, the deployed UI shows a clear hint with the exact env name to set. You can also bypass it for one browser session with `?rtc_api=https://your-api-origin`.
 
-1. Run the real API somewhere with **HTTPS** (e.g. **ngrok** / **Cloudflare Tunnel** to the machine running `npm run dev` or `npm start`).
-2. In Vercel **Project → Settings → Environment Variables**, add **`RTC_API_PROXY_TARGET`** = that origin only (e.g. `https://xxxx.ngrok-free.app`, **no** trailing slash, **do not** append `/api`).
-3. **Redeploy.** The browser keeps calling same-origin **`/api/*`**; Vercel functions forward to your backend (allowlisted paths only). Update **`RTC_API_PROXY_TARGET`** when the tunnel URL changes — **no client rebuild**.
+---
 
-**Limits:** Vercel **function wall-clock** (e.g. **60s** on this repo’s proxy) may cut off a slow first **QVAC** extract. If that happens, use **`VITE_API_BASE_URL`** at build time so the browser talks to the tunnel directly, or raise limits on a paid plan.
+## Demo script (≤ 2 minutes)
 
-**Multipart `/api/extract`:** the serverless proxy forwards a small allowlist of headers; very large uploads or unusual multipart edge cases may behave more reliably with **`VITE_API_BASE_URL`** (browser → tunnel) than through this proxy.
+1. Show the live site → open the **How it works** popup (footer button) for the 6-step infographic.
+2. Tap **Scan with smartphone**, capture a real receipt (multilingual is best).
+3. Watch the live scan progress reach 100% and auto-extract.
+4. Show structured fields + USDT hint with FX source label.
+5. Optionally edit a field to show the hint update.
+6. (Optional) Show the **Receipt search** panel querying past scans.
+7. (Optional) Show settlement form prefilled and explain the explicit confirm gate before signing.
 
-### Alternatives
+---
 
-- **`VITE_API_BASE_URL`** — bake the API origin into the static bundle at build time; change tunnel URL → rebuild + redeploy.
-- **`?rtc_api=https://…`** — one-time per-browser session override (no Vercel env); see banner copy on the live site when health fails.
+## Security & honesty
 
-From your PC: `npm run verify:backend -- https://xxxx.ngrok-free.app` before scanning on a phone.
+- Receipt images are **not** sent to a cloud LLM for extraction.
+- Confidence and FX source are surfaced in the UI; no on-chain action happens without an explicit user confirmation.
+- The repo is a hackathon demo — never commit real seeds, mnemonics, or mainnet keys.
 
-The red **deployment** banner on [tether-receipt-to-crypto.vercel.app](https://tether-receipt-to-crypto.vercel.app/) appears only when **`/api/health`** fails in production **and** the client has no `VITE_` / `?rtc_api=` override — after **`RTC_API_PROXY_TARGET`** is set and the tunnel is up, health should succeed and the banner stays hidden.
-
-On **phones**, the hosted UI offers **Take photo with camera** (`capture="environment"`) and **Choose from gallery**; after a camera shot it **auto-starts extraction** when **`/api`** is reachable (Vercel proxy to **`RTC_API_PROXY_TARGET`**, or **`VITE_API_BASE_URL`**, or **`?rtc_api=`**).
+---
 
 ## Links
 
-- **Source:** [github.com/panagot/Tether-Receipt-to-Crypto](https://github.com/panagot/Tether-Receipt-to-Crypto)
+- Live demo: https://tether-receipt-to-crypto.vercel.app/
+- Source: https://github.com/panagot/Tether-Receipt-to-Crypto
+- Loom walkthrough: https://www.loom.com/share/aceffa7ceb064a2ba63f56959c2e213c
+- Colosseum project: https://arena.colosseum.org/projects/explore/tether-or-receipt-to-crypto

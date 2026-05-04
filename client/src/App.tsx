@@ -544,11 +544,17 @@ export function App() {
 
   useEffect(() => {
     if (!pipelineOpen) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setPipelineOpen(false);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const focusTarget = document.querySelector<HTMLElement>(".pipeline-modal__close");
+    focusTarget?.focus();
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      previouslyFocused?.focus?.();
+    };
   }, [pipelineOpen]);
 
   const pay = async () => {
